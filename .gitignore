@@ -1,0 +1,9 @@
+# The dataset adapter is a SEPARATE, PRIVATE git repository that lives in datasets/. It is never part
+# of this repository's history: the dataset it reads declares no licence, and this repository's generic
+# part is meant to be publishable on its own (RoyaleLive docs/2026-09-24-il-extraction-plan.md).
+datasets/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
