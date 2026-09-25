@@ -1,10 +1,9 @@
 """This package reaches into RoyaleLearn through its supported surface and nowhere else, and it
-does not reach into the private dataset readers at all.
+never imports the separate ``datasets`` repository some machines keep in this folder.
 
 ``royalelearn.extensions.__all__`` is what RoyaleLearn promises to keep; anything else in it can
-move in any release. And ``datasets/`` in this folder is a separate private repository for
-readers of data that declares no licence: this package must work, and pass these tests, on a
-clone that does not have it.
+move in any release. And ``datasets/`` is never part of this repository: this package must
+work, and pass these tests, on a clone that does not have it.
 """
 
 from __future__ import annotations
@@ -40,7 +39,7 @@ def test_every_royalelearn_import_is_on_the_supported_surface() -> None:
     assert outside == [], "imports RoyaleLearn does not promise to keep"
 
 
-def test_nothing_imports_the_private_dataset_readers() -> None:
+def test_nothing_imports_the_datasets_repository() -> None:
     reached = sorted(
         f"{path.name}: {module}"
         for path in sorted(PACKAGE.rglob("*.py")) + sorted((ROOT / "tests").rglob("*.py"))

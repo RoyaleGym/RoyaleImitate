@@ -37,8 +37,7 @@ warm_start = "royaleimitate.warm_start:EXTENSION"
 [project.scripts]
 royaleimitate = "royaleimitate.cli:main"
 
-# datasets/ is a separate private repository in this folder on some machines. Naming the package
-# explicitly is what keeps it out of any wheel built here.
+# Naming the package explicitly keeps anything else in this folder out of a wheel built here.
 [tool.setuptools.packages.find]
 include = ["royaleimitate", "royaleimitate.*"]
 

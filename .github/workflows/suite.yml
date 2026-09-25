@@ -1,0 +1,94 @@
+# The suite, on a machine that has never seen this project, against the siblings' main.
+#
+# The install is the READMEs' own sequence: RoyaleLearn's (its siblings, then RoyaleLearn with
+# torch), then this package the way this README installs it, with --no-deps. A workflow that
+# installs some other way tests nothing a reader will experience.
+#
+# RoyaleLearn is checked out at main, so a change there that breaks this package shows here on
+# the next push or on a manual run. RoyaleLearn runs this suite against its own commits too.
+#
+# What is NOT here: the Rust toolchain and a royalesim build. The RustEngine rows of
+# tests/test_public_log.py skip without one; they run on a machine with the engine built.
+name: suite
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  suite:
+    # Two operating systems, as RoyaleLearn's suite runs: paths and process handling differ, and
+    # a single-OS run cannot see it. fail-fast is off so one red platform still reports the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: RoyaleImitate
+      - uses: actions/checkout@v4
+        with:
+          repository: RoyaleGym/RoyaleLearn
+          path: RoyaleLearn
+      - uses: actions/checkout@v4
+        with:
+          repository: RoyaleGym/RoyaleGym
+          path: RoyaleGym
+      - uses: actions/checkout@v4
+        with:
+          repository: RoyaleGym/RoyaleViser
+          path: RoyaleViser
+      # Not installed and not built: only its data/ is needed, because MockEngine reads the same
+      # card catalogue the real engine does.
+      - uses: actions/checkout@v4
+        with:
+          repository: RoyaleGym/RoyaleSim
+          path: RoyaleSim
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # CPU wheels explicitly: the default index serves a CUDA build gigabytes larger.
+      - name: install torch (cpu)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      # RoyaleLearn's README Stage 3: the data tables are generated, not stored.
+      - name: generate RoyaleSim's data tables
+        working-directory: RoyaleSim
+        shell: bash
+        run: |
+          python tools/extract_arena.py
+          python tools/extract_cards.py --vintage 2018
+          python tools/extract_cards.py --vintage 2018 --out data/derived/cards.json
+          python tools/extract_globals.py
+
+      - name: install
+        shell: bash
+        run: |
+          pip install -e RoyaleGym
+          pip install -e RoyaleViser
+          pip install -e "RoyaleLearn[torch]"
+          pip install -e "RoyaleLearn[dev]"
+          pip install -e RoyaleImitate --no-deps
+
+      - name: ruff
+        working-directory: RoyaleImitate
+        run: ruff check royaleimitate tests
+
+      - name: suite
+        working-directory: RoyaleImitate
+        env:
+          ROYALESIM_DATA_DIR: ${{ github.workspace }}/RoyaleSim/data
+        run: pytest -q -p no:randomly -rs
+
+      - name: record what this run was
+        if: always()
+        shell: bash
+        run: |
+          echo "royaleimitate=$(git -C RoyaleImitate rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          echo "royalelearn=$(git -C RoyaleLearn rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          echo "royalegym=$(git -C RoyaleGym rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"

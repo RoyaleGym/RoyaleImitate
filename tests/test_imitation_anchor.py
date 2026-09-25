@@ -432,9 +432,8 @@ def test_a_frozen_actor_does_not_move_and_its_optimizer_holds_nothing(
     case where stepping the actor's optimizer would move a frozen actor.
 
     Plant: step the actor's optimizer on a frozen iteration; the shared-trunk case must fail."""
-    from royalelearn.testing import ARCH, SEED
-
     from royalelearn.learn.nets import DefaultNetworkFactory
+    from royalelearn.testing import ARCH, SEED
 
     arch = msgspec.structs.replace(ARCH, separate_trunks=separate)
     model = DefaultNetworkFactory(SEED).build(rect.spec, arch, "cpu")

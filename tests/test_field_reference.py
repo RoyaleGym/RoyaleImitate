@@ -112,9 +112,8 @@ def test_a_rows_file_with_a_bad_label_or_weight_is_refused(tmp_path: Path) -> No
 
 def test_a_run_anchors_its_hold_rate_to_a_fitted_model(tmp_path: Path) -> None:
     """End to end: fit, name the artifact in a config, and train one iteration against it."""
-    from royalelearn.testing import coordinator, tiny_config
-
     from imitation_support import with_imitation
+    from royalelearn.testing import coordinator, tiny_config
 
     out = tmp_path / "timing"
     digest, _ = fit_field_reference(
