@@ -149,13 +149,18 @@ def test_inputs_are_fitted_at_the_precision_a_run_reads_them(tmp_path: Path) -> 
     digest and all. Plant: fitting on the float32 values makes the two digests differ.
     """
     rows = dict(np.load(_rows(tmp_path)))
-    # On float16's grid first, so a nudge of a millionth stays inside every value's rounding
-    # interval: a value near a rounding midpoint would otherwise be pushed across it.
-    rows["own_elixir"] = rows["own_elixir"].astype(np.float16).astype(np.float32)
+    # On float16's grid first, then nudged by a quarter of each value's own float16 spacing, so
+    # every nudge stays inside its value's rounding interval. A fixed nudge does not: a millionth
+    # moved 32 of these 6000 values to another float16 below about 0.004, and the test then
+    # passed only where the resulting weight difference happened to round away (it failed on a
+    # clean Windows runner).
+    grid = rows["own_elixir"].astype(np.float16)
+    rows["own_elixir"] = grid.astype(np.float32)
     np.savez(tmp_path / "rows.npz", **rows)
     nudged = dict(rows)
-    nudged["own_elixir"] = rows["own_elixir"] + np.float32(1e-6)
-    assert not np.array_equal(nudged["own_elixir"], rows["own_elixir"])
+    nudged["own_elixir"] = rows["own_elixir"] + np.spacing(grid).astype(np.float32) / 4
+    assert (nudged["own_elixir"] != rows["own_elixir"]).all(), "every value must differ"
+    assert np.array_equal(nudged["own_elixir"].astype(np.float16), grid), "and round back"
     np.savez(tmp_path / "nudged.npz", **nudged)
     config = FitConfig(hidden=[4], epochs=2, seed=5)
     fit_field_reference(
