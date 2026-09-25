@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "royaleimitate"
+version = "0.1.0"
+description = "RoyaleImitate: imitation learning for RoyaleLearn, as an optional add-on"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+# Neither is on PyPI: both are sibling checkouts, installed editable before this package
+# (RoyaleSim -> RoyaleGym -> RoyaleViser -> RoyaleLearn -> RoyaleImitate). pip resolves them from
+# the venv; it never fetches them.
+dependencies = [
+    "royalelearn>=0.1.0",
+    "royalegym>=0.1.0",
+    "numpy>=2.0",
+    "msgspec>=0.18",
+]
+
+[project.optional-dependencies]
+torch = [
+    "torch>=2.4",
+    "safetensors>=0.4",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.16",
+]
+
+# How RoyaleLearn finds the two config sections this package provides. The entry point's name is
+# the section's key.
+[project.entry-points."royalelearn.extensions"]
+imitation = "royaleimitate.extension:EXTENSION"
+warm_start = "royaleimitate.warm_start:EXTENSION"
+
+[project.scripts]
+royaleimitate = "royaleimitate.cli:main"
+
+# datasets/ is a separate private repository in this folder on some machines. Naming the package
+# explicitly is what keeps it out of any wheel built here.
+[tool.setuptools.packages.find]
+include = ["royaleimitate", "royaleimitate.*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers -m \"not slow and not engine\""
+markers = [
+    "slow: takes more than about five seconds",
+    "engine: needs a royalesim build that matches the data on disk",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["royaleimitate", "tests"]
+extend-exclude = ["datasets"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003", "SIM108"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["royaleimitate", "royalelearn", "royalegym", "royalesim"]
