@@ -8,9 +8,8 @@ Two config sections, found by RoyaleLearn through this package's entry points:
   its adaptive coefficient.
 
 And the tools that make what they read: saved-policy folders (``artifacts``), field models
-(``field_model``, ``fit``), and demonstration shards (``shards``, ``split``). Where the
-demonstrations come from, and the code that turns them into a timed log of card plays, belong to
-whoever owns them.
+(``field_model``, ``fit``), and demonstration shards (``shards``, ``split``). And ``public_log``:
+the observation's fair fields from a timed log of card plays, with no engine running.
 """
 
 from __future__ import annotations

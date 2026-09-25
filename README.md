@@ -20,12 +20,25 @@ And a `royaleimitate` command for the files those sections read:
 - `royaleimitate fit-field-reference` fits the small play-or-wait model a `field_mlp` reference
   loads.
 
+And one class that needs no engine:
+
+- `royaleimitate.public_log.PublicLogMemory` rebuilds the observation's fair fields with no engine
+  running. You give it a timed log of card plays and the seat's dealt deck order. It gives you both
+  elixir bars, your own hand and cycle, the cards the opponent has shown and the time since the
+  last play. It needs the `card_names` list your run pins. [docs/public-log.md](docs/public-log.md)
+  explains it.
+
 ## Install
 
-After RoyaleLearn, into the same environment:
+Install RoyaleLearn first, following its README. That leaves you in a `Royale` folder with the
+four public repos side by side and one virtual environment they share.
 
-```bash
-pip install -e . --no-deps
+These are Windows PowerShell commands, like RoyaleLearn's. On macOS or Linux, use
+`.venv/bin/python` in place of `.venv\Scripts\python`. From the `Royale` folder:
+
+```powershell
+git clone https://github.com/RoyaleGym/RoyaleImitate.git
+.venv\Scripts\python -m pip install -e RoyaleImitate --no-deps
 ```
 
 RoyaleLearn finds the two sections through this package's entry points. A config that names
@@ -57,6 +70,3 @@ python -m pytest -q
 
 The tests need RoyaleLearn and RoyaleGym installed. They do not need this package installed: the
 test session writes its install metadata for this checkout.
-
-`datasets/` is not part of this repository. On machines that have it, it is a separate private
-repository of dataset-specific readers, kept apart because the datasets they read carry no licence.

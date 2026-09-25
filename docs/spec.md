@@ -1,19 +1,16 @@
 # RoyaleImitate: the contract
 
 This is section 19 of RoyaleLearn's `docs/harness-spec.md`, "Learning from demonstrations", as it
-stood when the code moved here, under the same numbers. The parts that stay RoyaleLearn's -- how an
-extension section is found and recorded (19.1), the freeze a section can schedule (19.5), and export
-(19.13) -- are in that document. Section numbers elsewhere in both repositories refer to this one
-numbering.
+stood when the code moved here, under the same numbers. The parts that stay RoyaleLearn's are in
+that document: how an extension section is found and recorded (19.1), the freeze a section can
+schedule (19.5), and export (19.13). Section numbers elsewhere in both repositories refer to this
+one numbering.
 
 ## 19. Learning from demonstrations
 
 A run can start from a policy cloned from demonstrations, and can be held near a reference policy
 while it learns. This section is the contract for that machinery. It is generic: a demonstration is
-any timed log of card plays that can be driven through the run's own environment, whether it came
-from a scripted bot, another policy or a person playing the engine. Where the logs come from, and
-the code that turns them into the driver's input, belong to whoever owns the logs and never to this
-package.
+any timed log of card plays that can be driven through the run's own environment.
 
 It lands as six packages, named here so that a config, a commit and a test can refer to them:
 
@@ -25,6 +22,10 @@ It lands as six packages, named here so that a config, a commit and a test can r
 | L4 | demonstration shards: the stored rows, keyed to the engine | 19.10 |
 | L5 | `royalelearn bc`, `royalelearn fit-field-reference` and the `demo_bc` regulariser | 19.12 |
 | L6 | checkpoint export and `royalelearn evaluate` | 19.13 |
+
+One more part sits outside the six, and outside RoyaleLearn's section 19:
+`royaleimitate.public_log.PublicLogMemory` rebuilds the observation's fair fields from a timed log
+of card plays, with no engine running. It is described in [public-log.md](public-log.md).
 
 When the sections are absent nothing in this section runs, and a run's config.json, identity and
 `run_id` are exactly what they were before they existed. That is tested.
@@ -394,10 +395,10 @@ RoyaleLearn's `docs/harness-spec.md` section 19.13.
 
 ### 19.14 What stays out of the public packages
 
-The logs, anything converted from them, the shards, the fitted references, the cloned weights and
-any run initialised from them live where the log's owner keeps them, under a path the config names
-with a digest. Nothing in this package reads a log format; the driver's input is the `ReplayLog`
-above, built by the owner's code, which is never a component and so never enters `user_code`.
+The logs, the shards, the fitted references, the cloned weights and any run initialised from them
+live where the log's owner keeps them, under a path the config names with a digest. Nothing in this
+package reads a log format; the driver's input is the `ReplayLog` above, built by the owner's code,
+which is never a component and so never enters `user_code`.
 
 ### 19.15 Controls, each seen failing on a plant before it is trusted
 
