@@ -1,14 +1,17 @@
 # The suite, on a machine that has never seen this project, against the siblings' main.
 #
-# The install is the READMEs' own sequence: RoyaleLearn's (its siblings, then RoyaleLearn with
-# torch), then this package the way this README installs it, with --no-deps. A workflow that
-# installs some other way tests nothing a reader will experience.
+# The install is the READMEs' own sequence: RoyaleLearn's stages (the siblings, the data tables,
+# the engine built in place, then RoyaleLearn with torch), then this package the way this README
+# installs it, with --no-deps. A workflow that installs some other way tests nothing a reader will
+# experience.
 #
 # RoyaleLearn is checked out at main, so a change there that breaks this package shows here on
-# the next push or on a manual run. RoyaleLearn runs this suite against its own commits too.
+# the next push or on a manual run. RoyaleLearn runs this suite against its own commits too,
+# without the engine.
 #
-# What is NOT here: the Rust toolchain and a royalesim build. The RustEngine rows of
-# tests/test_public_log.py skip without one; they run on a machine with the engine built.
+# THE ENGINE IS BUILT HERE, on both platforms. Without it the RustEngine half of
+# tests/test_public_log.py skips, and that half then runs on no clean machine at all. A skip is
+# not a pass, so the suite refuses to run when the engine does not construct.
 name: suite
 
 on:
@@ -25,6 +28,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,8 +47,6 @@ jobs:
         with:
           repository: RoyaleGym/RoyaleViser
           path: RoyaleViser
-      # Not installed and not built: only its data/ is needed, because MockEngine reads the same
-      # card catalogue the real engine does.
       - uses: actions/checkout@v4
         with:
           repository: RoyaleGym/RoyaleSim
@@ -52,43 +56,74 @@ jobs:
         with:
           python-version: '3.12'
 
+      # maturin needs a Rust toolchain; the READMEs list it as a prerequisite.
+      - uses: dtolnay/rust-toolchain@stable
+
+      # One venv beside the repos, as the READMEs make it. maturin builds into the active venv,
+      # so its path is exported for every later step, per platform.
+      - name: venv and tools
+        run: |
+          python -m venv .venv
+          if [ "$RUNNER_OS" = "Windows" ]; then bin=.venv/Scripts; else bin=.venv/bin; fi
+          echo "VPY=$GITHUB_WORKSPACE/$bin/python" >> "$GITHUB_ENV"
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
+          "$bin/python" -m pip install maturin pytest hypothesis ruff
+
       # CPU wheels explicitly: the default index serves a CUDA build gigabytes larger.
       - name: install torch (cpu)
-        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+        run: '"$VPY" -m pip install torch --index-url https://download.pytorch.org/whl/cpu'
 
-      # RoyaleLearn's README Stage 3: the data tables are generated, not stored.
+      # RoyaleLearn's README Stage 3: the tables are generated, not stored, and the engine reads
+      # the 15.535 card table by copy.
       - name: generate RoyaleSim's data tables
         working-directory: RoyaleSim
-        shell: bash
         run: |
-          python tools/extract_arena.py
-          python tools/extract_cards.py --vintage 2018
-          python tools/extract_cards.py --vintage 2018 --out data/derived/cards.json
-          python tools/extract_globals.py
+          "$VPY" tools/extract_arena.py
+          "$VPY" tools/extract_cards.py --vintage 2018
+          cp data/derived/cards-15.535.json data/derived/cards.json
+          "$VPY" tools/extract_globals.py
+
+      # Built in place: the engine finds its data relative to this checkout.
+      - name: build the engine
+        working-directory: RoyaleSim
+        run: '"$VPY" -m maturin develop --release'
 
       - name: install
-        shell: bash
         run: |
-          pip install -e RoyaleGym
-          pip install -e RoyaleViser
-          pip install -e "RoyaleLearn[torch]"
-          pip install -e "RoyaleLearn[dev]"
-          pip install -e RoyaleImitate --no-deps
+          "$VPY" -m pip install -e RoyaleGym
+          "$VPY" -m pip install -e RoyaleViser
+          "$VPY" -m pip install -e "RoyaleLearn[torch]"
+          "$VPY" -m pip install -e "RoyaleLearn[dev]"
+          "$VPY" -m pip install -e RoyaleImitate --no-deps
+
+      - name: refuse to run the suite without the engine
+        env:
+          ROYALESIM_DATA_DIR: ${{ github.workspace }}/RoyaleSim/data
+        run: |
+          "$VPY" -c "from royalegym.rust_engine import RustEngine, build_digest, core_available; assert core_available(), 'royalesim did not install; the suite would skip its way to green'; RustEngine(); print('engine constructs, build_digest', build_digest())"
 
       - name: ruff
         working-directory: RoyaleImitate
-        run: ruff check royaleimitate tests
+        run: '"$VPY" -m ruff check royaleimitate tests'
 
       - name: suite
         working-directory: RoyaleImitate
         env:
           ROYALESIM_DATA_DIR: ${{ github.workspace }}/RoyaleSim/data
-        run: pytest -q -p no:randomly -rs
+        run: '"$VPY" -m pytest -q -p no:randomly -rs'
 
+      # The collected count is emitted, not left to be reconstructed from pass and skip counts.
+      # tee, so it is in the log a reader can fetch as well as in the summary.
       - name: record what this run was
         if: always()
-        shell: bash
+        env:
+          ROYALESIM_DATA_DIR: ${{ github.workspace }}/RoyaleSim/data
         run: |
-          echo "royaleimitate=$(git -C RoyaleImitate rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
-          echo "royalelearn=$(git -C RoyaleLearn rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
-          echo "royalegym=$(git -C RoyaleGym rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "royaleimitate=$(git -C RoyaleImitate rev-parse HEAD)"
+            echo "royalelearn=$(git -C RoyaleLearn rev-parse HEAD)"
+            echo "royalegym=$(git -C RoyaleGym rev-parse HEAD)"
+            echo "royalesim=$(git -C RoyaleSim rev-parse HEAD)"
+            echo "collected=$(cd RoyaleImitate && "$VPY" -m pytest -q --collect-only -p no:randomly 2>/dev/null | tail -1)"
+            "$VPY" -c "from royalegym.rust_engine import build_digest; print(f'build_digest={build_digest()}')" || true
+          } | tee -a "$GITHUB_STEP_SUMMARY"
