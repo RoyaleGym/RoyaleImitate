@@ -52,7 +52,7 @@ def test_a_misspelt_field_inside_a_section_is_refused() -> None:
 
 
 def test_a_config_an_older_build_wrote_for_an_il_run_loads() -> None:
-    """Every IL config.json of 0ab7a29..S2 wrote ``init`` and ``actor_lr_scale`` inside the
+    """Every IL config.json of 7e93217..S2 wrote ``init`` and ``actor_lr_scale`` inside the
     imitation block, null when unset; RoyaleLearn's one-release shim drops the nulls."""
     said: list[str] = []
     loaded = cfg.load_config(
