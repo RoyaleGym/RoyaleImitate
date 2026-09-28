@@ -83,8 +83,8 @@ full contract, and [docs/alarms.md](docs/alarms.md) lists the four alarms these 
 
 ## Tests
 
-From inside the `RoyaleImitate` folder, with the shared environment's python
-(`../.venv/bin/python` on macOS and Linux):
+From the `Royale` folder, go into `RoyaleImitate` and run the tests there with the shared
+environment's python (`../.venv/bin/python` on macOS and Linux):
 
 ```powershell
 cd RoyaleImitate
@@ -92,7 +92,7 @@ cd RoyaleImitate
 ```
 
 On 2026-09-28 at 03f8e82 that printed `121 passed` on Windows with the engine built. Run from
-the `Royale` folder instead, it collects the tests of every repo there and errors.
+the `Royale` folder without the `cd`, pytest collects the tests of every repo there and errors.
 
 The tests need RoyaleLearn and RoyaleGym installed. They do not need this package installed: the
 test session writes its install metadata for this checkout.
