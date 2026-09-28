@@ -32,11 +32,12 @@ THE ASSUMPTIONS, EACH CHECKED AGAINST AN ENGINE IN tests/test_public_log.py:
     * a Mirror in the hand costs the listed elixir of its side's last play that was not
       a Mirror, plus one, and -1 before there is one (``hand_costs``).
 
-WHAT IS NOT RIGHT YET FOR A MIRROR. The hand's prices are, and ``observe`` passes them to
-``fair_fields``. But the elixir counts come from ``MatchMemory``, which charges a Mirror
-play its listed one elixir rather than what it cost, so after a Mirror play the counted
-bar of the side that played it reads too high by the copied card's elixir. That is
-``MatchMemory``'s to fix, in RoyaleGym.
+THE MIRROR. ``observe`` passes the hand's prices to ``fair_fields``, and the elixir counts
+come from ``MatchMemory``, which charges a Mirror play its copy plus one from RoyaleGym
+c6a36b0 on. With a RoyaleGym older than that it charged the listed one elixir, so after a
+Mirror play the counted bar of the side that played it read too high by the copy's elixir.
+The env writes the same prices from RoyaleGym 74c3852 on: the log's fields match the env's
+only when both sides have them.
 """
 
 from __future__ import annotations

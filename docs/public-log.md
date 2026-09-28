@@ -74,9 +74,12 @@ and what each hand slot costs (`hand_costs()`), which for a Mirror is more than 
    last play that was not a Mirror. This one is checked against the engine's own price for each
    hand slot (`PlayerState.hand_costs`), in battles where both seats hold the Mirror.
 
-The Mirror is not fully right yet. Its price in the hand is. But the elixir count still charges
-a Mirror play its listed one elixir, not what it cost, so after a Mirror play the bar of the side
-that played it reads too high. That count is RoyaleGym's `MatchMemory`, and the fix belongs there.
+The elixir counts charge a Mirror play the same price, the card it copied plus one. That count is
+RoyaleGym's `MatchMemory`, which does it from RoyaleGym c6a36b0 on; before that it charged one
+elixir, and a counted bar read too high after every Mirror play. The env writes a Mirror slot at
+its price from RoyaleGym 74c3852 on. So the fields here match the env's with RoyaleGym 74c3852 or
+later. A battle in `tests/test_public_log.py` with the Mirror in both decks checks every field
+against the env at every step.
 
 `tests/test_public_log.py` checks each one against MockEngine and RustEngine. It plays battles on
 both, logs every accepted play, and compares every field with the env's vector at every step, for

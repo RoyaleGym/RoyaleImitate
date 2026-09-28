@@ -72,14 +72,16 @@ def ids(engine) -> dict[str, int]:
     return {c.name: i for i, c in enumerate(engine.cards())}
 
 
-def play_out(engine, seed: int, start_tick: int, ticks: int, shift: int = 0) -> Played:
+def play_out(
+    engine, seed: int, start_tick: int, ticks: int, shift: int = 0, decks_named=DECKS
+) -> Played:
     """One battle, the env's fields and the log's side by side at every step.
 
     ``shift`` moves Blue's own plays that many ticks later in Blue's log, and nothing
-    else: the plant.
+    else: the plant. ``seen["played"]`` counts the accepted plays by card name.
     """
     card = ids(engine)
-    decks = [[card[n] for n in d] for d in DECKS]
+    decks = [[card[n] for n in d] for d in decks_named]
     max_mana = default_calibration().int("match.MAX_MANA")
     rng = np.random.default_rng(seed)
     parser = TileActionParser()
@@ -116,6 +118,7 @@ def play_out(engine, seed: int, start_tick: int, ticks: int, shift: int = 0) -> 
         "leaked": False,
         "narrowed": False,
         "ticks": set(),
+        "played": {},
     }
     mismatches: list[str] = []
     plays = {t: 0 for t in TEAMS}
@@ -161,6 +164,8 @@ def play_out(engine, seed: int, start_tick: int, ticks: int, shift: int = 0) -> 
             if r.status != DeployStatus.OK:
                 continue
             plays[r.team] += 1
+            name = names[r.card_id]
+            seen["played"][name] = seen["played"].get(name, 0) + 1
             for (team, _flag), log in logs.items():
                 if r.team == team:
                     log.own_play(r.tick + (shift if team == BLUE else 0), r.card_id)
@@ -313,6 +318,25 @@ def test_a_mirror_in_the_hand_is_priced_as_the_engine_prices_it():
     assert not mismatches, f"{len(mismatches)} steps priced differently: {mismatches[:5]}"
     assert priced > 0, "no Mirror was in a hand with a card to copy, so nothing was compared"
     assert played > 0, "no Mirror was played, so none was priced after cycling back"
+
+
+@pytest.mark.skipif(not core_available(), reason=str(CORE_IMPORT_ERROR))
+def test_the_log_gives_the_env_fields_in_battles_where_both_seats_hold_the_mirror():
+    """Every field against the env's vector, at every step, with a Mirror in both decks.
+
+    What a Mirror moves: the price of a hand slot, and both counted bars, since a Mirror play
+    costs its copy plus one. The log and the env each have to charge it that, from their own
+    memory of the side's last play, and write the hand's prices the same way.
+    """
+    engine = RustEngine()
+    start = engine.rules().deploy_lockout_ticks
+    run = play_out(engine, seed=11, start_tick=start, ticks=2400, decks_named=MIRROR_DECKS)
+    assert not run.mismatches, (
+        f"{len(run.mismatches)} field mismatches, first: {run.mismatches[:5]}"
+    )
+    assert run.seen["played"].get("Mirror", 0) > 0, (
+        f"no Mirror was played, so nothing here moved: {run.seen['played']}"
+    )
 
 
 @pytest.mark.skipif(not core_available(), reason=str(CORE_IMPORT_ERROR))
