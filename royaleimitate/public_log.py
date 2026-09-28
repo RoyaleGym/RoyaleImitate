@@ -28,7 +28,15 @@ THE ASSUMPTIONS, EACH CHECKED AGAINST AN ENGINE IN tests/test_public_log.py:
     * a play at tick p is paid before tick p runs and shows in any observation at a
       tick after p;
     * a match still running at the end of regulation is in overtime;
-    * the elixir rate at a tick is ``ElixirLaw.rate_at``.
+    * the elixir rate at a tick is ``ElixirLaw.rate_at``;
+    * a Mirror in the hand costs the listed elixir of its side's last play that was not
+      a Mirror, plus one, and -1 before there is one (``hand_costs``).
+
+WHAT IS NOT RIGHT YET FOR A MIRROR. The hand's prices are, and ``observe`` passes them to
+``fair_fields``. But the elixir counts come from ``MatchMemory``, which charges a Mirror
+play its listed one elixir rather than what it cost, so after a Mirror play the counted
+bar of the side that played it reads too high by the copied card's elixir. That is
+``MatchMemory``'s to fix, in RoyaleGym.
 """
 
 from __future__ import annotations
@@ -44,6 +52,7 @@ from royalegym.protocol import (
     Calibration,
     CardInfo,
     ElixirLaw,
+    Placement,
     default_calibration,
 )
 
@@ -104,6 +113,8 @@ class PublicLogMemory:
         self.enemy_last_card = enemy_last_card
         self.hand = deck[:HAND_SIZE]
         self.queue = deck[HAND_SIZE:]
+        #: What a Mirror played now would copy: this side's last play that was not a Mirror.
+        self.mirror_target: int | None = None
         self._pending: list[tuple[int, int, int, int]] = []  # (tick, order fed, side, card)
         self._fed = 0
         self.memory = MatchMemory(n, self.law)
@@ -167,6 +178,23 @@ class PublicLogMemory:
         """The field names ``observe`` returns, in vector order."""
         return [*FAIR_FIELDS, *(["enemy_last_card"] if self.enemy_last_card else [])]
 
+    def hand_costs(self) -> list[int]:
+        """What each own hand slot costs as of the last ``observe``, as the engine prices it.
+
+        A card's listed elixir; for a Mirror, the listed elixir of the card it would copy
+        (this side's last play that was not a Mirror) plus one, and -1 while there is none.
+        This is ``PlayerState.hand_costs``, rebuilt from the log.
+        """
+        costs = []
+        for card in self.hand:
+            if self.cards[card].placement != Placement.MIRROR:
+                costs.append(int(self.cards[card].elixir))
+            elif self.mirror_target is None:
+                costs.append(-1)
+            else:
+                costs.append(int(self.cards[self.mirror_target].elixir) + 1)
+        return costs
+
     def observe(self, tick: int) -> dict[str, np.ndarray]:
         """The fields at ``tick``, from every play made before it. The clock only moves on."""
         memory = self.memory
@@ -195,6 +223,7 @@ class PublicLogMemory:
             self.cards,
             self.max_mana,
             enemy_last_card=self.enemy_last_card,
+            hand_costs=self.hand_costs(),
         )
 
     # -- internals ---------------------------------------------------------------
@@ -208,3 +237,5 @@ class PublicLogMemory:
             )
         self.hand[self.hand.index(card)] = self.queue.pop(0)
         self.queue.append(card)
+        if self.cards[card].placement != Placement.MIRROR:
+            self.mirror_target = card

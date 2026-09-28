@@ -61,8 +61,8 @@ It is a thin wrapper over RoyaleGym's `MatchMemory` (`bind`, `start`, `advance`,
 and `fair_fields`. The env keeps its own `MatchMemory` with the same calls and reads its vector with
 the same `fair_fields`. Of the calls, only the clock differs: the env reads it from the engine, and
 this class works it out from the tick with `MatchClock.at`. Apart from the `card_names` check, this
-class adds only where the inputs come from: plays from the log, and the own hand from the deck
-order.
+class adds only where the inputs come from: plays from the log, the own hand from the deck order,
+and what each hand slot costs (`hand_costs()`), which for a Mirror is more than its listed elixir.
 
 ## The assumptions, and where each is checked
 
@@ -70,6 +70,13 @@ order.
 2. A play at tick p is paid before tick p runs, and shows in any observation after tick p.
 3. A match still running at the end of regulation is in overtime.
 4. The elixir rate at a tick is `ElixirLaw.rate_at`.
+5. A Mirror in the hand costs the card it would copy plus one. The card it copies is its side's
+   last play that was not a Mirror. This one is checked against the engine's own price for each
+   hand slot (`PlayerState.hand_costs`), in battles where both seats hold the Mirror.
+
+The Mirror is not fully right yet. Its price in the hand is. But the elixir count still charges
+a Mirror play its listed one elixir, not what it cost, so after a Mirror play the bar of the side
+that played it reads too high. That count is RoyaleGym's `MatchMemory`, and the fix belongs there.
 
 `tests/test_public_log.py` checks each one against MockEngine and RustEngine. It plays battles on
 both, logs every accepted play, and compares every field with the env's vector at every step, for

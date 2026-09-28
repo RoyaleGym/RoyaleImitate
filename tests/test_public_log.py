@@ -231,6 +231,113 @@ def test_plant_a_log_one_tick_late_is_caught(engine):
     assert all(" seat 0 " in m for m in run.mismatches), run.mismatches[:5]
 
 
+#: Both seats hold the Mirror, fifth in the dealt order: the engine never deals it into the
+#: opening hand, and the memory takes the first four cards as the hand.
+MIRROR_DECKS = (
+    ["Skeletons", "Knight", "Archer", "Goblins", "Mirror", "Fireball", "Musketeer", "Valkyrie"],
+    ["Goblins", "Valkyrie", "Knight", "Fireball", "Mirror", "Musketeer", "Archer", "Minions"],
+)
+
+
+@pytest.mark.skipif(not core_available(), reason=str(CORE_IMPORT_ERROR))
+def test_a_mirror_in_the_hand_is_priced_as_the_engine_prices_it():
+    """``hand_costs`` from the log against the engine's ``PlayerState.hand_costs``, at every
+    step of battles in which both seats hold the Mirror and play at random.
+
+    The engine prices a Mirror at the card it would copy plus one, and the log has to find
+    that card itself. Mirror prices and Mirror plays are both counted, so a run in which no
+    Mirror was priced, or none was played and cycled back, fails rather than passes.
+
+    What this cannot see is whether a Mirror play itself moves the target. A deck holds one
+    Mirror, and the four plays that bring it back to the hand each set the target first, so
+    the log's rule (the last play that was not a Mirror) and a plain "last play" price every
+    reachable hand the same. A plant of the second stays green here, as it must.
+    """
+    engine = RustEngine()
+    card = ids(engine)
+    assert "Mirror" in card, "the default catalogue has no Mirror (it has since RoyaleSim 6ad6793)"
+    mirror = card["Mirror"]
+    names = [c.name for c in engine.cards()]
+    parser = TileActionParser()
+    parser.bind(engine)
+    lockout = engine.rules().deploy_lockout_ticks
+    mismatches: list[str] = []
+    priced = played = 0
+    for seed in range(3):
+        rng = np.random.default_rng(seed)
+        decks = [[card[n] for n in d] for d in MIRROR_DECKS]
+        engine.reset(seed, MatchSetup(decks=decks, shuffle=ShuffleMode.NONE, start_tick=lockout))
+        state = engine.state()
+        assert [list(state.players[t].hand) for t in TEAMS] == [d[:HAND_SIZE] for d in decks]
+        logs = {
+            team: PublicLogMemory(
+                engine.cards(),
+                decks[team],
+                card_names=names,
+                start_tick=state.tick,
+                own_elixir_milli=state.players[team].elixir_milli,
+                enemy_elixir_milli=state.players[1 - team].elixir_milli,
+            )
+            for team in TEAMS
+        }
+        step = 0
+        while not state.game_over and state.tick < lockout + 3000:
+            for team, log in logs.items():
+                log.observe(state.tick)
+                want = [int(c) for c in state.players[team].hand_costs]
+                got = log.hand_costs()
+                if got != want:
+                    mismatches.append(f"seed {seed} tick {state.tick} seat {team}: {got} {want}")
+                hand = list(state.players[team].hand)
+                priced += sum(1 for c, p in zip(hand, want, strict=True) if c == mirror and p >= 0)
+            commands = []
+            for team in TEAMS:
+                if rng.random() >= 0.5:
+                    continue
+                legal = np.flatnonzero(parser.action_mask(state, team)[1:]) + 1
+                if len(legal):
+                    cmd = parser.parse(int(rng.choice(legal)), state, team)
+                    if cmd is not None:
+                        commands.append(cmd)
+            for r in engine.step(commands, CADENCES[step % len(CADENCES)]):
+                if r.status != DeployStatus.OK:
+                    continue
+                played += r.card_id == mirror
+                for team, log in logs.items():
+                    if r.team == team:
+                        log.own_play(r.tick, r.card_id)
+                    else:
+                        log.enemy_play(r.tick, r.card_id)
+            step += 1
+            state = engine.state()
+    assert not mismatches, f"{len(mismatches)} steps priced differently: {mismatches[:5]}"
+    assert priced > 0, "no Mirror was in a hand with a card to copy, so nothing was compared"
+    assert played > 0, "no Mirror was played, so none was priced after cycling back"
+
+
+@pytest.mark.skipif(not core_available(), reason=str(CORE_IMPORT_ERROR))
+def test_observe_writes_a_mirror_slot_at_its_price():
+    """The fields ``observe`` returns price a Mirror slot from ``hand_costs``.
+
+    Five elixir, and the Knight played: the Mirror cycles into the Knight's slot and costs
+    four, with about two in the bar. At its listed one elixir it would read 0.1 and be
+    affordable; at its price it reads 0.4 and is not. The env does not pass prices yet, so
+    this reads the fields themselves rather than comparing them with an env vector.
+    """
+    cards = RustEngine().cards()
+    deck = deck_of(cards, MIRROR_DECKS[0])
+    log = PublicLogMemory(cards, deck, card_names=names_of(cards), own_elixir_milli=5000)
+    knight = deck_of(cards, ["Knight"])[0]
+    log.own_play(1, knight)
+    got = log.observe(2)
+    slot = log.hand.index(deck_of(cards, ["Mirror"])[0])
+    assert slot == 1, log.hand
+    assert log.hand_costs()[slot] == 4
+    max_mana = default_calibration().int("match.MAX_MANA")
+    assert got["own_hand_cost"][slot] == pytest.approx(4 / max_mana)
+    assert got["own_hand_affordable"][slot] == 0
+
+
 # -- the memory alone ---------------------------------------------------------------
 
 
