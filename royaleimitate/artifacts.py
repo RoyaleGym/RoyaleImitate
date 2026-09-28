@@ -82,7 +82,7 @@ def verify_artifact(path: str | Path, stated: str, *, what: str) -> Path:
         raise PreflightError(
             f"{what}: the artifact at {folder} has digest {found}, and the config states "
             f"{stated}. Either the folder changed since the config was written or the config "
-            "names the wrong one; `royalelearn artifact-digest <folder>` prints a folder's digest"
+            "names the wrong one; `royaleimitate artifact-digest <folder>` prints a folder's digest"
         )
     return folder
 

@@ -12,16 +12,20 @@ A run can start from a policy cloned from demonstrations, and can be held near a
 while it learns. This section is the contract for that machinery. It is generic: a demonstration is
 any timed log of card plays that can be driven through the run's own environment.
 
-It lands as six packages, named here so that a config, a commit and a test can refer to them:
+It lands as six packages, named here so that a config, a commit and a test can refer to them.
+Not all of it is built (checked 2026-09-28 against this repo's code):
 
-| Package | What | Section |
-| --- | --- | --- |
-| L1 | the `warm_start` and `imitation` config sections, their identity, actor init and the freeze | 19.1-19.5 |
-| L2 | reference policies, the reference-KL regulariser and its adaptive coefficient | 19.6-19.9 |
-| L3 | the replay driver: a timed log through the run's environment | 19.11 |
-| L4 | demonstration shards: the stored rows, keyed to the engine | 19.10 |
-| L5 | `royalelearn bc`, `royalelearn fit-field-reference` and the `demo_bc` regulariser | 19.12 |
-| L6 | checkpoint export and `royalelearn evaluate` | 19.13 |
+| Package | What | Section | Built |
+| --- | --- | --- | --- |
+| L1 | the `warm_start` and `imitation` config sections, their identity, actor init and the freeze | 19.1-19.5 | yes |
+| L2 | reference policies, the reference-KL regulariser and its adaptive coefficient | 19.6-19.9 | yes |
+| L3 | the replay driver: a timed log through the run's environment | 19.11 | no |
+| L4 | demonstration shards: the stored rows, keyed to the engine | 19.10 | yes, `royaleimitate.shards` |
+| L5 | `royalelearn bc`, the field-reference fit and the `demo_bc` regulariser | 19.12 | the fit only, as `royaleimitate fit-field-reference` |
+| L6 | checkpoint export and `royalelearn evaluate` | 19.13 | no |
+
+The commands that exist are `royaleimitate artifact-digest` and `royaleimitate
+fit-field-reference`. The sections below still describe the rest, as specified.
 
 One more part sits outside the six, and outside RoyaleLearn's section 19:
 `royaleimitate.public_log.PublicLogMemory` rebuilds the observation's fair fields from a timed log
@@ -39,6 +43,7 @@ refused by name. Top level rather than inside `ppo`, because most of it is not a
 section carries its own alarm thresholds, which stay out of the identity as the core's do.
 
 ```json
+{
 "warm_start": {
   "init": {"path": "artifacts/bc-v1", "sha256": "<artifact digest>", "self_test_atol": 1e-5},
   "actor_lr_scale": {"kind": "piecewise", "points": [[0, 0.0], [82080, 0.25], [98496, 1.0]]},
@@ -58,12 +63,14 @@ section carries its own alarm thresholds, which stay out of the identity as the 
   ],
   "alarms": {"ref_kl_warn": 1.0, "lambda_saturated_patience": 10}
 }
+}
 ```
 
 - `init` (optional): the actor's starting weights (19.4).
 - `actor_lr_scale` (optional, a schedule): multiplies the actor's learning rate (19.5). Absent is 1.
 - `references`: named reference policies (19.6). A regulariser names one.
-- `regularisers`: `reference_kl` (19.7) and `demo_bc` (19.12). Each has a `name` that is unique
+- `regularisers`: `reference_kl` (19.7), and `demo_bc` (19.12), which is specified and not built:
+  a config that names it is refused. Each has a `name` that is unique
   in the list and becomes the metric segment `imitation/<name>/...`.
 
 Every schedule is an ordinary `ScheduleSpec` in env steps, the harness's one clock, so a resume
@@ -90,7 +97,7 @@ says which it is, and the snapshot store loads either.
 `sha256` is the artifact digest: the sha256 of the canonical JSON of `{relative path: sha256 of the
 file's bytes}` over every file in the folder. Over the folder rather than over the weights, because
 the other files change numbers too: a field-MLP's normalisation lives in `spec.json` and an init's
-self-test in `probe.safetensors`. `royalelearn artifact-digest <folder>` prints it, and every tool
+self-test in `probe.safetensors`. `royaleimitate artifact-digest <folder>` prints it, and every tool
 that writes an artifact prints it as it finishes.
 
 A shard directory (19.10) is the exception, because it can be many gigabytes: its digest is the
@@ -256,7 +263,7 @@ cloned actor's no-op probability is its own.
 
 ### 19.10 Demonstration shards (L4)
 
-`royalelearn.imitation.shards`. A shard directory holds `manifest.json` and part files of
+`royaleimitate.shards`. A shard directory holds `manifest.json` and part files of
 `rows_per_part` rows (4,096 by default: a part is decompressed whole when it is read, and its
 spatial column is the size of the planes times two bytes a row), one compressed array per column:
 
@@ -310,7 +317,7 @@ independent.
 
 ### 19.11 The replay driver (L3)
 
-`royalelearn.imitation.replay_driver` drives a `ReplayLog` through the run's own environment,
+The replay driver (specified, not built) drives a `ReplayLog` through the run's own environment,
 built from the run's `EnvFactorySpec` with the truncation removed, and returns the rows a shard
 stores. A `ReplayLog` is:
 
@@ -356,7 +363,8 @@ boundary without this package knowing what it is.
 
 ### 19.12 Behaviour cloning, the timing model and `demo_bc` (L5)
 
-**`royalelearn bc --config <run config> --shards <dir> --out <folder> [--bc <bc config>]`** trains
+**`royalelearn bc --config <run config> --shards <dir> --out <folder> [--bc <bc config>]`**
+(specified, not built) trains
 the run's own actor:
 built by the run's network factory from the run's `net`, so its `arch_digest` is the run's, with
 `net.noop_bias` kept (the no-op's bias learns around the constant). No critic is trained.
@@ -377,7 +385,7 @@ built by the run's network factory from the run's `net`, so its `arch_digest` is
 - **Output**: an actor artifact (19.2) with 1,024 validation rows as probe rows and their
   log-probabilities, computed by the self-test's own function on the weights as saved.
 
-**`royalelearn fit-field-reference --rows <file.npz> --fields a,b,c --out <folder>`** fits the
+**`royaleimitate fit-field-reference --rows <file.npz> --fields a,b,c --out <folder>`** fits the
 `field_mlp` reference: weighted binary cross-entropy of a play label on named field columns, CPU.
 The rows file holds one column per field (`[N, width]`), `label`, `weight` and `group`; validation
 is by group as in 19.10. It reports NLL, Brier score and AUC on validation. Each input is rounded to
