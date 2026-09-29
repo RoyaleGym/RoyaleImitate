@@ -4,8 +4,8 @@ WHAT IT IS FOR. A log of who played which card when, plus the rules everyone kno
 fixes most of what a player remembers: both elixir bars, the own hand and cycle, the
 cards the opponent has shown, how long since the last play. ``PublicLogMemory`` rebuilds
 those fields from such a log, so a model can be trained on a timed log of card plays
-with no engine running, and read the numbers the env would show, except for the seat's own
-bar after an ability press (below).
+with no engine running, and read the numbers the env would show. The log also takes the
+ability presses, which are paid from the bar and play no card (below).
 
 ONE SET OF FORMULAS. It is a thin wrapper over ``MatchMemory`` in ``royalegym.obs``:
 ``bind`` gives it the card costs, ``start`` starts it, and ``advance`` and
@@ -17,13 +17,15 @@ the inputs come from: plays from a log, and the own hand from the dealt deck ord
 WHAT IT CANNOT FILL. The board: tower hitpoints, crowns and which kings are awake
 (``BOARD_FIELDS``). A log of plays does not say what the plays did.
 
-Nor ability presses. A log of card plays has none, and a press is paid from the bar: 1
-elixir for a Golden Knight's, 3 for a hero Musketeer's, 2 for a hero Ice Golem's. After the
-seat's own press the env shows the engine's own bar, and the one counted here is higher by
-the press's cost until the bar is full again. The env counts the enemy's bar from card plays
-too (``MatchMemory``, RoyaleGym 3d0023d), so the two agree there, both high by the cost. The
-env makes presses only when RoyaleGym's action parser has its opt-in ability buttons on; a
-log of real matches has one wherever a champion's or hero's ability was used.
+ABILITY PRESSES. A press of an ability button (a champion's, a hero's) plays no card and
+is paid from the bar: 1 elixir for a Golden Knight's, 3 for a hero Musketeer's, 2 for a hero
+Ice Golem's. Log each with ``own_press`` or ``enemy_press``, its tick and its elixir, dated
+like a play, and both counts charge it, as the env's ``MatchMemory`` does from RoyaleGym
+276c3e9 on (the env reads a press off the public ability rows). A press missing from the log
+leaves that side's counted bar high by its cost until the bar is full again. A log with
+presses needs RoyaleGym 276c3e9 or later; a log without them runs on older ones as before.
+The env makes presses only when RoyaleGym's action parser has its opt-in ability buttons on;
+a log of real matches has one wherever a champion's or hero's ability was used.
 
 THE CATALOGUE PIN. Card ids are positions in the catalogue, so making one more card
 loadable renumbers every later id. ``card_names`` pins the catalogue by name, and the
@@ -39,7 +41,9 @@ THE ASSUMPTIONS, EACH CHECKED AGAINST AN ENGINE IN tests/test_public_log.py:
     * a match still running at the end of regulation is in overtime;
     * the elixir rate at a tick is ``ElixirLaw.rate_at``;
     * a Mirror in the hand costs the listed elixir of its side's last play that was not
-      a Mirror, plus one, and -1 before there is one (``hand_costs``).
+      a Mirror, plus one, and -1 before there is one (``hand_costs``);
+    * an ability press at tick p is paid like a play at p, at its button's cost, and
+      moves no hand slot.
 
 THE MIRROR. ``observe`` passes the hand's prices to ``fair_fields``, and the elixir counts
 come from ``MatchMemory``, which charges a Mirror play its copy plus one from RoyaleGym
@@ -128,6 +132,7 @@ class PublicLogMemory:
         #: What a Mirror played now would copy: this side's last play that was not a Mirror.
         self.mirror_target: int | None = None
         self._pending: list[tuple[int, int, int, int]] = []  # (tick, order fed, side, card)
+        self._presses: list[tuple[int, int, int, int]] = []  # (tick, order fed, side, elixir)
         self._fed = 0
         self.memory = MatchMemory(n, self.law)
         self.memory.bind(self.cards)
@@ -164,6 +169,24 @@ class PublicLogMemory:
 
     def enemy_play(self, tick: int, card: int) -> None:
         self._feed(tick, _ENEMY, card)
+
+    def own_press(self, tick: int, elixir: int) -> None:
+        """An ability press of this seat's at ``tick``, paid ``elixir`` from its bar."""
+        self._feed_press(tick, _OWN, elixir)
+
+    def enemy_press(self, tick: int, elixir: int) -> None:
+        """An ability press of the opponent's at ``tick``, paid ``elixir`` from its bar."""
+        self._feed_press(tick, _ENEMY, elixir)
+
+    def _feed_press(self, tick: int, side: int, elixir: int) -> None:
+        if tick < self.memory.tick:
+            raise ValueError(
+                f"a press at tick {tick} arrived after tick {self.memory.tick} was observed"
+            )
+        if elixir < 0:
+            raise ValueError(f"a press costs no less than 0 elixir, got {elixir}")
+        self._presses.append((tick, self._fed, side, int(elixir)))
+        self._fed += 1
 
     def _feed(self, tick: int, side: int, card: int) -> None:
         if tick < self.memory.tick:
@@ -224,7 +247,17 @@ class PublicLogMemory:
                     own.append((when, card))
                 else:
                     enemy.append((when, card))
-            memory.advance(tick, clock.regular_ticks, clock.overtime, own, enemy)
+            pressed = sorted(p for p in self._presses if p[0] < tick)
+            self._presses = [p for p in self._presses if p[0] >= tick]
+            # Passed only when there are any, so a log without presses still runs on a
+            # RoyaleGym whose advance() takes none (before 276c3e9).
+            presses = {}
+            if pressed:
+                presses = {
+                    "own_presses": [(w, e) for w, _, side, e in pressed if side == _OWN],
+                    "foe_presses": [(w, e) for w, _, side, e in pressed if side == _ENEMY],
+                }
+            memory.advance(tick, clock.regular_ticks, clock.overtime, own, enemy, **presses)
             memory.show_own_hand(self.hand, self.queue[0])
         return fair_fields(
             memory,

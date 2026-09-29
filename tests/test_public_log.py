@@ -34,10 +34,12 @@ from royalegym.protocol import (
     DECK_SIZE,
     HAND_SIZE,
     TEAMS,
+    DeployCommand,
     DeployStatus,
     ElixirLaw,
     MatchSetup,
     ShuffleMode,
+    ability_row,
     default_calibration,
 )
 from royalegym.rust_engine import CORE_IMPORT_ERROR, RustEngine, core_available
@@ -73,12 +75,22 @@ def ids(engine) -> dict[str, int]:
 
 
 def play_out(
-    engine, seed: int, start_tick: int, ticks: int, shift: int = 0, decks_named=DECKS
+    engine,
+    seed: int,
+    start_tick: int,
+    ticks: int,
+    shift: int = 0,
+    decks_named=DECKS,
+    press: bool = False,
 ) -> Played:
     """One battle, the env's fields and the log's side by side at every step.
 
     ``shift`` moves Blue's own plays that many ticks later in Blue's log, and nothing
     else: the plant. ``seen["played"]`` counts the accepted plays by card name.
+
+    ``press`` has a seat press its first ability button, instead of playing, on every step
+    the engine would take the press, and logs each press at the cost its button row showed.
+    ``seen["pressed"]`` counts the accepted presses by seat.
     """
     card = ids(engine)
     decks = [[card[n] for n in d] for d in decks_named]
@@ -119,6 +131,7 @@ def play_out(
         "narrowed": False,
         "ticks": set(),
         "played": {},
+        "pressed": {t: 0 for t in TEAMS},
     }
     mismatches: list[str] = []
     plays = {t: 0 for t in TEAMS}
@@ -151,7 +164,14 @@ def play_out(
             seen["leaked"] |= bool(got["own_elixir_leaked"][0] > 0)
             seen["narrowed"] |= bool(0 < got["enemy_possible_hand"].sum() < DECK_SIZE)
         commands = []
+        cost = {}
         for team in TEAMS:
+            if press and state.players[team].abilities:
+                button = DeployCommand(team=team, hand_slot=HAND_SIZE, x=0, y=0)
+                if engine.check_deploy(button) == DeployStatus.OK:
+                    cost[team] = ability_row(state.players[team].abilities[0]).cost
+                    commands.append(button)
+                    continue
             full = state.players[team].elixir_milli >= 1000 * max_mana
             if (FULL_ONLY[team] and not full) or rng.random() >= PLAY[team]:
                 continue
@@ -162,6 +182,14 @@ def play_out(
                     commands.append(cmd)
         for r in engine.step(commands, CADENCES[step % len(CADENCES)]):
             if r.status != DeployStatus.OK:
+                continue
+            if r.hand_slot >= HAND_SIZE:
+                seen["pressed"][r.team] += 1
+                for (team, _flag), log in logs.items():
+                    if r.team == team:
+                        log.own_press(r.tick, cost[r.team])
+                    else:
+                        log.enemy_press(r.tick, cost[r.team])
                 continue
             plays[r.team] += 1
             name = names[r.card_id]
@@ -234,6 +262,37 @@ def test_plant_a_log_one_tick_late_is_caught(engine):
     )
     assert run.mismatches, "PLANT DID NOT LAND: a one-tick-late log matched the env"
     assert all(" seat 0 " in m for m in run.mismatches), run.mismatches[:5]
+
+
+#: Both seats hold a Golden Knight, first in the dealt order, and a Giant for him to dash at.
+PRESS_DECKS = (
+    ["GoldenKnight", "Knight", "Archer", "Giant", "Minions", "Fireball", "Zap", "Cannon"],
+    ["GoldenKnight", "Giant", "Archer", "Knight", "Minions", "Fireball", "Zap", "Cannon"],
+)
+
+
+@pytest.mark.skipif(not core_available(), reason=str(CORE_IMPORT_ERROR))
+def test_the_log_gives_the_env_fields_in_battles_where_both_seats_press_a_golden_knight():
+    """Every field against the env's vector, at every step, with ability presses on both seats.
+
+    A press plays no card and is paid from the bar, so a log that did not charge it would
+    read the pressing side's bar high by its cost: the own bar against the engine's, the
+    enemy's against the env's count, which charges presses it reads off the public ability
+    rows. Each press is logged with ``own_press`` or ``enemy_press`` at its button's cost.
+    """
+    engine = RustEngine()
+    if "GoldenKnight" not in {c.name for c in engine.cards()}:
+        pytest.skip("SKIPPED, NOT PASSED: this catalogue holds no Golden Knight")
+    start = engine.rules().deploy_lockout_ticks
+    run = play_out(
+        engine, seed=2, start_tick=start, ticks=2400, decks_named=PRESS_DECKS, press=True
+    )
+    assert all(run.seen["pressed"][t] > 0 for t in TEAMS), (
+        f"a seat never pressed, so nothing here moved: {run.seen['pressed']}"
+    )
+    assert not run.mismatches, (
+        f"{len(run.mismatches)} field mismatches, first: {run.mismatches[:5]}"
+    )
 
 
 #: Both seats hold the Mirror, fifth in the dealt order: the engine never deals it into the

@@ -2,8 +2,8 @@
 
 `royaleimitate.public_log.PublicLogMemory` gives you one seat's fair observation fields with no
 engine running. You give it a timed log of card plays and the seat's dealt deck order. It gives you
-the numbers the env would show that seat at the same tick, except the seat's own elixir bar after
-an ability press (see [What it cannot fill](#what-it-cannot-fill)).
+the numbers the env would show that seat at the same tick. Log the ability presses too: see
+[Ability presses](#ability-presses).
 
 ## What it fills
 
@@ -16,13 +16,22 @@ last play. `fields()` lists the names in vector order: RoyaleGym's `FAIR_FIELDS`
 The board: tower hitpoints, crowns and which kings are awake (`BOARD_FIELDS`). A log of plays does
 not say what the plays did.
 
-Ability presses. A log of card plays has none, and a press is paid from the bar: 1 elixir for a
-Golden Knight's, 3 for a hero Musketeer's, 2 for a hero Ice Golem's. After the seat's own press the
-env shows the engine's own bar, and the one counted here is higher by the press's cost until the
-bar is full again. The env counts the enemy's bar from card plays too (RoyaleGym's `MatchMemory`,
-checked on 3d0023d), so the two agree there, both high by the cost. The env makes presses only when
-RoyaleGym's action parser has its opt-in ability buttons on. A log of real matches has one wherever
-a champion's or hero's ability was used.
+## Ability presses
+
+A press of an ability button (a champion's, a hero's) plays no card, and it is paid from the bar: 1
+elixir for a Golden Knight's, 3 for a hero Musketeer's, 2 for a hero Ice Golem's. Log each one with
+`own_press(tick, elixir)` or `enemy_press(tick, elixir)`, dated like a play. Both counted bars then
+charge it, as the env's `MatchMemory` does from RoyaleGym 276c3e9 on. The env reads a press off the
+public ability rows.
+
+A press missing from the log leaves that side's counted bar high by its cost, until the bar is full
+again. A log with presses needs RoyaleGym 276c3e9 or later. A log without them runs on older ones as
+before.
+
+The env makes presses only when RoyaleGym's action parser has its opt-in ability buttons on. A log
+of real matches has one wherever a champion's or hero's ability was used. A battle in
+`tests/test_public_log.py` in which both seats press a Golden Knight checks every field against the
+env at every step.
 
 ## Use
 
@@ -49,6 +58,8 @@ print(fields["own_elixir"], fields["enemy_cards_seen"])
   leave it out for the default.
 - Feed plays in any amount ahead of time. `observe(tick)` sees exactly the plays made before that
   tick. Ticks only move forward, and a play dated before an observed tick is refused.
+- `own_press` and `enemy_press` log ability presses the same way: see
+  [Ability presses](#ability-presses).
 - `own_ticks_since_play` counts from the observation that first showed the play, as the env does.
 - `unaffordable` counts plays the counted bar could not pay, as (own, enemy). It stays (0, 0) on a
   log an engine produced. Anything else means a play is missing from the log or the elixir law is
