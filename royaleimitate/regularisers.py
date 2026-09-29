@@ -179,6 +179,45 @@ class AdaptiveCoefficient:
         return self.value
 
 
+class _ReferenceCache:
+    """A frozen reference's outputs on one iteration's rows, stored in the first epoch and read
+    by cell in the later ones.
+
+    The first epoch visits every choice row once, so ``put`` sees each cell once. The lookup
+    table is built on the first ``get``: one read of the largest cell to the host, once an
+    iteration, rather than one per minibatch. A cell never stored is position -1 (or past the
+    table) and ``index_select`` raises on it: the batches of every epoch hold the same cells, so
+    a miss means they did not, and a wrong row must not be read in its place.
+    """
+
+    def __init__(self) -> None:
+        self._cells: list[Tensor] = []
+        self._parts: list[tuple[Tensor, ...]] = []
+        self._position: Tensor | None = None
+        self._table: tuple[Tensor, ...] | None = None
+
+    def put(self, cells: Tensor, parts: tuple[Tensor, ...]) -> None:
+        self._cells.append(cells)
+        self._parts.append(tuple(part.detach() for part in parts))
+
+    def get(self, cells: Tensor) -> tuple[Tensor, ...] | None:
+        import torch
+
+        if self._table is None:
+            if not self._cells:
+                return None
+            stored = torch.cat(self._cells)
+            self._table = tuple(torch.cat(column) for column in zip(*self._parts, strict=True))
+            size = int(stored.max()) + 1 if stored.numel() else 0
+            position = torch.full((size,), -1, dtype=torch.long, device=stored.device)
+            position[stored] = torch.arange(stored.numel(), device=stored.device)
+            self._position = position
+            self._cells, self._parts = [], []
+        assert self._position is not None
+        index = self._position.index_select(0, cells)
+        return tuple(column.index_select(0, index) for column in self._table)
+
+
 class ReferenceKL:
     """One ``reference_kl`` regulariser: the term, its first-epoch measurement and its lambda.
 
@@ -210,6 +249,7 @@ class ReferenceKL:
         self.kappa = self.budget.value(0)
         self._sums: dict[str, Tensor] = {}
         self._choice: Tensor | None = None
+        self._cache = _ReferenceCache()
 
     # -- one iteration -------------------------------------------------------
 
@@ -224,11 +264,19 @@ class ReferenceKL:
             names += ("card", "tile")
         self._sums = {name: torch.zeros((), dtype=torch.float32, device=device) for name in names}
         self._choice = torch.zeros((), dtype=torch.float32, device=device)
+        self._cache = _ReferenceCache()
 
     def loss(self, inputs: ActorTermInputs, *, epoch: int, measure: bool) -> tuple[float, Tensor]:
         """``(lambda, sum(KL))`` on the minibatch's choice rows."""
+        cells = getattr(inputs, "cells", None)
         return self.lam, self.kl_sum(
-            inputs.obs, inputs.rows, inputs.log_probs, inputs.mask, measure=measure
+            inputs.obs,
+            inputs.rows,
+            inputs.log_probs,
+            inputs.mask,
+            measure=measure,
+            cells=None if cells is None else cells.index_select(0, inputs.rows),
+            epoch=epoch,
         )
 
     def kl_sum(
@@ -239,6 +287,8 @@ class ReferenceKL:
         mask: Tensor,
         *,
         measure: bool,
+        cells: Tensor | None = None,
+        epoch: int = 0,
     ) -> Tensor:
         """The sum of KL over the covered rows among ``rows``, differentiable in ``policy``.
 
@@ -246,6 +296,13 @@ class ReferenceKL:
         same order as ``policy``'s rows. ``measure`` adds them to this iteration's epoch-1 means.
         Rows are left out by a zero weight rather than by indexing, because an index needs its
         size on the host, and reading it would put a synchronisation inside the minibatch loop.
+
+        THE REFERENCE RUNS ONCE AN ITERATION. It is frozen, so its output on a row does not
+        change between epochs, and recomputing it every epoch repeated the same forward once an
+        epoch, the largest part of the term's cost. With ``cells`` (the choice rows' positions in
+        the iteration's batch, in ``rows`` order), the first epoch keeps what the reference
+        returned and later epochs look it up by cell. The first epoch computes exactly what it
+        did before. Without ``cells`` every epoch runs the reference, as before.
         """
         import torch
 
@@ -254,14 +311,25 @@ class ReferenceKL:
 
         sub = _Obs(*(None if t is None else t.index_select(0, rows) for t in obs))
         keep = self.filter.keep(sub.vector)
+        cached = self._cache.get(cells) if cells is not None and epoch > 0 else None
         ref: Tensor | None = None
         if self.factor == "joint":
-            ref = self.reference.log_probs(sub)  # type: ignore[union-attr]
+            if cached is not None:
+                (ref,) = cached
+            else:
+                ref = self.reference.log_probs(sub)  # type: ignore[union-attr]
+                if cells is not None and epoch == 0:
+                    self._cache.put(cells, (ref,))
             kl = joint_kl(ref, policy, mask)
             ref_noop = ref[:, NOOP]
             ref_play = log1mexp(ref_noop)
         else:
-            ref_noop, ref_play = self.reference.noop_log_probs(sub)
+            if cached is not None:
+                ref_noop, ref_play = cached
+            else:
+                ref_noop, ref_play = self.reference.noop_log_probs(sub)
+                if cells is not None and epoch == 0:
+                    self._cache.put(cells, (ref_noop, ref_play))
             pol_noop = policy[:, NOOP]
             kl = noop_kl(ref_noop, ref_play, pol_noop, log1mexp(pol_noop))
         if measure:

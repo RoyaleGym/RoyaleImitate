@@ -30,6 +30,7 @@ from royaleimitate.regularisers import (
     AdaptiveCoefficient,
     ReferenceKL,
     RowFilter,
+    _ReferenceCache,
     joint_kl,
     joint_kl_parts,
     log1mexp,
@@ -626,3 +627,69 @@ def test_play_rate_by_elixir_counts_choice_rows_at_each_whole_elixir() -> None:
         "env/play_rate_by_elixir/5": 0.0,
         "env/play_rate_by_elixir/7": 1.0,
     }
+
+
+def test_the_cache_returns_each_cell_exactly_what_was_stored() -> None:
+    """Stored in one epoch's minibatches, read back in another epoch's order: each row is the
+    one stored for its cell, bit for bit. A cell never stored raises rather than read a row."""
+    cache = _ReferenceCache()
+    values = torch.randn(10, 7)
+    for part in (torch.tensor([7, 2, 9]), torch.tensor([0, 5]), torch.tensor([3, 8, 1])):
+        cache.put(part, (values[part] * 1.0, values[part, 0]))
+    order = torch.tensor([1, 9, 0, 8, 2, 5, 3, 7])
+    table, first = cache.get(order)
+    assert torch.equal(table, values[order])
+    assert torch.equal(first, values[order, 0])
+    with pytest.raises((IndexError, RuntimeError)):
+        cache.get(torch.tensor([4]))
+    with pytest.raises((IndexError, RuntimeError)):
+        cache.get(torch.tensor([11]))
+
+
+def test_the_reference_runs_once_an_iteration_and_moves_the_run_only_by_rounding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The frozen reference's forward runs in the first epoch only; later epochs read it by cell.
+
+    Recomputing it every epoch repeated the same forward once an epoch. The cached run is not
+    bit for bit the run that recomputed it every epoch, and cannot be:
+    a row's reference output depends in its last bits on the batch it was computed in, and the
+    later epochs used to compute it in minibatches of other sizes (measured on this CPU run:
+    at most 4.8e-7 between the stored and a recomputed value). So what holds is:
+
+    * the cached run is reproducible: the same config twice gives the same learner, bit for
+      bit, which is what ``run_exact`` promises;
+    * after three iterations with a coefficient that moves the actor, its learner is within
+      1e-6 of the every-epoch run (measured 3.0e-8, on parameters up to 12);
+    * it forwards the reference on one epoch's rows where the other forwards it on every
+      epoch's.
+    """
+    folder = tmp_path / "other-seed"
+    digest = seeded_artifact(tiny_config(tmp_path / "donor", master_seed=77), folder, coordinator)
+    block = _reference_block(folder, digest, coef={"start": 0.5, "max": 1.0})
+    forwarded: list[int] = []
+    original = SnapshotReference.log_probs
+
+    def counted(self: SnapshotReference, obs: Any) -> Any:
+        out = original(self, obs)
+        forwarded.append(int(out.shape[0]))
+        return out
+
+    monkeypatch.setattr(SnapshotReference, "log_probs", counted)
+    cached = _three_iterations(with_imitation(tiny_config(tmp_path / "cached"), **block))
+    cached_rows = sum(forwarded)
+    again = _three_iterations(with_imitation(tiny_config(tmp_path / "again"), **block))
+    forwarded.clear()
+    monkeypatch.setattr(_ReferenceCache, "get", lambda self, cells: None)
+    every = _three_iterations(with_imitation(tiny_config(tmp_path / "every"), **block))
+    every_rows = sum(forwarded)
+
+    assert len(cached[0]) == len(again[0]) == len(every[0])
+    for one, other in zip(cached[0], again[0], strict=True):
+        assert torch.equal(one, other)
+    pairs = zip(cached[0], every[0], strict=True)
+    worst = max(float((one - other).abs().max()) for one, other in pairs)
+    assert worst < 1e-6, worst
+    epochs = int(tiny_config(tmp_path / "probe").ppo.n_epochs)
+    assert epochs > 1, "one epoch would leave nothing to cache"
+    assert cached_rows > 0 and every_rows == epochs * cached_rows, (cached_rows, every_rows)
