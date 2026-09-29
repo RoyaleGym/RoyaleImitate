@@ -4,7 +4,8 @@ WHAT IT IS FOR. A log of who played which card when, plus the rules everyone kno
 fixes most of what a player remembers: both elixir bars, the own hand and cycle, the
 cards the opponent has shown, how long since the last play. ``PublicLogMemory`` rebuilds
 those fields from such a log, so a model can be trained on a timed log of card plays
-with no engine running, and read exactly the numbers the env would show.
+with no engine running, and read the numbers the env would show, except for the seat's own
+bar after an ability press (below).
 
 ONE SET OF FORMULAS. It is a thin wrapper over ``MatchMemory`` in ``royalegym.obs``:
 ``bind`` gives it the card costs, ``start`` starts it, and ``advance`` and
@@ -15,6 +16,14 @@ the inputs come from: plays from a log, and the own hand from the dealt deck ord
 
 WHAT IT CANNOT FILL. The board: tower hitpoints, crowns and which kings are awake
 (``BOARD_FIELDS``). A log of plays does not say what the plays did.
+
+Nor ability presses. A log of card plays has none, and a press is paid from the bar: 1
+elixir for a Golden Knight's, 3 for a hero Musketeer's, 2 for a hero Ice Golem's. After the
+seat's own press the env shows the engine's own bar, and the one counted here is higher by
+the press's cost until the bar is full again. The env counts the enemy's bar from card plays
+too (``MatchMemory``, RoyaleGym 3d0023d), so the two agree there, both high by the cost. The
+env makes presses only when RoyaleGym's action parser has its opt-in ability buttons on; a
+log of real matches has one wherever a champion's or hero's ability was used.
 
 THE CATALOGUE PIN. Card ids are positions in the catalogue, so making one more card
 loadable renumbers every later id. ``card_names`` pins the catalogue by name, and the
@@ -37,7 +46,9 @@ come from ``MatchMemory``, which charges a Mirror play its copy plus one from Ro
 c6a36b0 on. With a RoyaleGym older than that it charged the listed one elixir, so after a
 Mirror play the counted bar of the side that played it read too high by the copy's elixir.
 The env writes the same prices from RoyaleGym 74c3852 on: the log's fields match the env's
-only when both sides have them.
+only when both sides have them. A RoyaleGym must also be able to load the engine at all: one
+older than its engine refuses to build a RustEngine. On RoyaleSim 1e6a6a5 the oldest that
+does, and passes tests/test_public_log.py, is 600bfc8.
 """
 
 from __future__ import annotations

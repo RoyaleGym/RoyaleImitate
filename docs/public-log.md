@@ -2,7 +2,8 @@
 
 `royaleimitate.public_log.PublicLogMemory` gives you one seat's fair observation fields with no
 engine running. You give it a timed log of card plays and the seat's dealt deck order. It gives you
-the numbers the env would show that seat at the same tick.
+the numbers the env would show that seat at the same tick, except the seat's own elixir bar after
+an ability press (see [What it cannot fill](#what-it-cannot-fill)).
 
 ## What it fills
 
@@ -14,6 +15,14 @@ last play. `fields()` lists the names in vector order: RoyaleGym's `FAIR_FIELDS`
 
 The board: tower hitpoints, crowns and which kings are awake (`BOARD_FIELDS`). A log of plays does
 not say what the plays did.
+
+Ability presses. A log of card plays has none, and a press is paid from the bar: 1 elixir for a
+Golden Knight's, 3 for a hero Musketeer's, 2 for a hero Ice Golem's. After the seat's own press the
+env shows the engine's own bar, and the one counted here is higher by the press's cost until the
+bar is full again. The env counts the enemy's bar from card plays too (RoyaleGym's `MatchMemory`,
+checked on 3d0023d), so the two agree there, both high by the cost. The env makes presses only when
+RoyaleGym's action parser has its opt-in ability buttons on. A log of real matches has one wherever
+a champion's or hero's ability was used.
 
 ## Use
 
@@ -78,7 +87,9 @@ The elixir counts charge a Mirror play the same price, the card it copied plus o
 RoyaleGym's `MatchMemory`, which does it from RoyaleGym c6a36b0 on; before that it charged one
 elixir, and a counted bar read too high after every Mirror play. The env writes a Mirror slot at
 its price from RoyaleGym 74c3852 on. So the fields here match the env's with RoyaleGym 74c3852 or
-later. A battle in `tests/test_public_log.py` with the Mirror in both decks checks every field
+later, as long as it can load your engine: a RoyaleGym older than its engine refuses to build a
+RustEngine. On RoyaleSim 1e6a6a5 the oldest RoyaleGym that loads it and passes these tests is
+600bfc8. A battle in `tests/test_public_log.py` with the Mirror in both decks checks every field
 against the env at every step.
 
 `tests/test_public_log.py` checks each one against MockEngine and RustEngine. It plays battles on
