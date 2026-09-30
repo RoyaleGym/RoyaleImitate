@@ -65,12 +65,13 @@ from royalelearn.testing import RecordingSGD as _Recording  # noqa: E402
 HAND, TILES = 4, 6
 
 
-def _random_pair(seed: int, batch: int = 64) -> tuple[Any, Any, Any]:
-    """Two masked log-probability tables over a small action layout, with a random legal set."""
+def _random_pair(seed: int, batch: int = 64, buttons: int = 0) -> tuple[Any, Any, Any]:
+    """Two masked log-probability tables over a small action layout, with a random legal set;
+    ``buttons`` ability-button actions after the grid, as RoyaleGym lays them out."""
     from royalelearn.learn.distribution import MaskedCategorical
 
     generator = torch.Generator().manual_seed(seed)
-    width = 1 + HAND * TILES
+    width = 1 + HAND * TILES + buttons
     mask = torch.rand(batch, width, generator=generator) < 0.4
     mask[:, 0] = True
     ref = MaskedCategorical(torch.randn(batch, width, generator=generator) * 2.0, mask)
@@ -98,6 +99,21 @@ def test_the_chain_rule_parts_sum_to_the_joint_kl() -> None:
     """The spec's identity. Plant: weight the tile term by p(tile | slot), not p(slot, tile)."""
     for seed in range(4):
         ref, pol, mask = _random_pair(seed)
+        parts = joint_kl_parts(ref, pol, mask, hand_size=HAND, tiles=TILES)
+        total = parts.noop + parts.card + parts.tile
+        np.testing.assert_allclose(
+            total.numpy(), joint_kl(ref, pol, mask).numpy(), rtol=1e-4, atol=1e-5
+        )
+        for part in parts:
+            assert bool((part > -1e-5).all()), "a chain-rule part of a KL is never negative"
+
+
+def test_with_ability_buttons_a_press_is_one_of_the_choices_after_a_play() -> None:
+    """With button actions after the grid, the parts still sum to the joint KL: a press is one
+    of the options a play chooses between, beside the hand slots, so it is in ``card``."""
+    for seed in range(4):
+        ref, pol, mask = _random_pair(seed, buttons=3)
+        assert bool(mask[:, 1 + HAND * TILES :].any()), "no button is ever legal here"
         parts = joint_kl_parts(ref, pol, mask, hand_size=HAND, tiles=TILES)
         total = parts.noop + parts.card + parts.tile
         np.testing.assert_allclose(

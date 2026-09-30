@@ -89,15 +89,18 @@ def joint_kl_parts(
 ) -> KLParts:
     """``kl_noop + kl_card + kl_tile == joint_kl``, exactly up to float rounding.
 
-    ``kl_card`` is p_ref(play) times the KL of the slot given a play, and ``kl_tile`` is the
-    reference-weighted KL of the tile given the slot. Reporting only; nothing is differentiated.
+    ``kl_card`` is p_ref(play) times the KL of the option given a play, and ``kl_tile`` is the
+    reference-weighted KL of the tile given the slot. The options of a play are the hand slots
+    and, where the action space has them after the grid, the ability buttons: a press is chosen
+    beside a card, and has no tile. Reporting only; nothing is differentiated.
     """
     import torch
 
     batch = ref.shape[0]
-    grid = mask[:, 1:].reshape(batch, hand_size, tiles)
-    ref_tile = ref[:, 1:].reshape(batch, hand_size, tiles)
-    pol_tile = policy[:, 1:].reshape(batch, hand_size, tiles)
+    end = 1 + hand_size * tiles
+    grid = mask[:, 1:end].reshape(batch, hand_size, tiles)
+    ref_tile = ref[:, 1:end].reshape(batch, hand_size, tiles)
+    pol_tile = policy[:, 1:end].reshape(batch, hand_size, tiles)
     minus_inf = torch.full_like(ref_tile, -math.inf)
     ref_slot = torch.logsumexp(torch.where(grid, ref_tile, minus_inf), dim=-1)
     pol_slot = torch.logsumexp(torch.where(grid, pol_tile, minus_inf), dim=-1)
@@ -107,6 +110,12 @@ def joint_kl_parts(
     slot_legal = grid.any(-1)
     card_terms = ref_slot.exp() * ((ref_slot - ref_play[:, None]) - (pol_slot - pol_play[:, None]))
     card = torch.where(slot_legal, card_terms, torch.zeros_like(card_terms)).sum(-1)
+    if ref.shape[-1] > end:
+        ref_press, pol_press, pressable = ref[:, end:], policy[:, end:], mask[:, end:]
+        press_terms = ref_press.exp() * (
+            (ref_press - ref_play[:, None]) - (pol_press - pol_play[:, None])
+        )
+        card = card + torch.where(pressable, press_terms, torch.zeros_like(press_terms)).sum(-1)
     tile_terms = ref_tile.exp() * (
         (ref_tile - ref_slot[..., None]) - (pol_tile - pol_slot[..., None])
     )
@@ -244,7 +253,7 @@ class ReferenceKL:
         self.budget = build_schedule(spec.budget)
         self.coef = AdaptiveCoefficient(spec.coef)
         self.hand_size = int(env.hand_size)
-        self.tiles = (int(env.n_actions) - 1) // max(1, self.hand_size)
+        self.tiles = int(env.tiles[0]) * int(env.tiles[1])
         self.lam = self.coef.current(0)
         self.kappa = self.budget.value(0)
         self._sums: dict[str, Tensor] = {}
