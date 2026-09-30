@@ -33,6 +33,23 @@ of real matches has one wherever a champion's or hero's ability was used. A batt
 `tests/test_public_log.py` in which both seats press a Golden Knight checks every field against the
 env at every step.
 
+## The command delay
+
+Under RoyaleSim r16's command delay, a play or a press is accepted on one tick and runs some ticks
+later. It is paid, and the hand moves, only when it runs, as in the client. Log each one at the tick
+it runs.
+
+A seat knows its own taps, so give its own commands the tick they were accepted too: `own_play(tick,
+card, accepted=...)` and `own_press(tick, elixir, accepted=...)`. From the tick after that through
+the tick it runs, the fields show the command waiting, as the env's do: the waiting card is flagged
+in `own_hand_pending`, `own_pending_cost` shows what it holds, and the hand is priced from the bar
+less that. A waiting Mirror holds the price it had when accepted. The opponent's waiting commands
+are never an input.
+
+A log without accepted ticks shows nothing waiting, and runs on a RoyaleGym before 5565645 as
+before. Battles in `tests/test_public_log.py` with the two seats' commands waiting 21 and 22 ticks
+check every field against the env at every step, with and without the Mirror in both decks.
+
 ## Use
 
 ```python

@@ -27,6 +27,17 @@ presses needs RoyaleGym 276c3e9 or later; a log without them runs on older ones 
 The env makes presses only when RoyaleGym's action parser has its opt-in ability buttons on;
 a log of real matches has one wherever a champion's or hero's ability was used.
 
+THE COMMAND DELAY. Under RoyaleSim r16's command delay a play or a press is accepted on one
+tick and runs, and is paid, some ticks later; the hand and the bar move only when it runs, as
+the client's do. Log each at the tick it RUNS. The seat knows its own taps, so give its own
+commands the tick they were accepted too (``own_play(..., accepted=)``, ``own_press(...,
+accepted=)``): from the tick after that through the tick it runs, the fields show the command
+waiting, as the env's do (``own_hand_pending``, ``own_pending_cost``, and a hand priced from
+the bar less what waits). A waiting play holds the price it had when accepted; a Mirror's is
+its copy's plus one, the copy being the seat's last play that had run by then. The
+opponent's waiting commands are never an input. A log without accepted ticks shows nothing
+waiting and runs on RoyaleGym before 5565645 as before.
+
 THE CATALOGUE PIN. Card ids are positions in the catalogue, so making one more card
 loadable renumbers every later id. ``card_names`` pins the catalogue by name, and the
 constructor refuses cards whose names differ from it in any way. Pass the list your run
@@ -43,7 +54,9 @@ THE ASSUMPTIONS, EACH CHECKED AGAINST AN ENGINE IN tests/test_public_log.py:
     * a Mirror in the hand costs the listed elixir of its side's last play that was not
       a Mirror, plus one, and -1 before there is one (``hand_costs``);
     * an ability press at tick p is paid like a play at p, at its button's cost, and
-      moves no hand slot.
+      moves no hand slot;
+    * under a command delay, an own command accepted at a and run at r waits in every
+      observation at a tick in a+1..r, holding the price it had when accepted.
 
 THE MIRROR. ``observe`` passes the hand's prices to ``fair_fields``, and the elixir counts
 come from ``MatchMemory``, which charges a Mirror play its copy plus one from RoyaleGym
@@ -189,7 +202,9 @@ class PublicLogMemory:
         self._feed_press(tick, _OWN, elixir)
         self._wait(accepted, tick, _KIND_PRESS, -1, int(elixir))
 
-    def _wait(self, accepted: int | None, runs: int, kind: int, what: int, cost: int | None) -> None:
+    def _wait(
+        self, accepted: int | None, runs: int, kind: int, what: int, cost: int | None
+    ) -> None:
         if accepted is None or accepted >= runs:
             return
         if accepted < self.memory.tick:
