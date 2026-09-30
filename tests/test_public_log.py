@@ -101,6 +101,8 @@ def play_out(
     builders = {False: SpatialObsBuilder(), True: SpatialObsBuilder(card_identity=True)}
     for b in builders.values():
         b.bind(engine, parser)
+        # The env sets this from the engine's delay; the memories take it at reset.
+        b.command_delay = tuple(getattr(engine, "command_delay_ticks", (0, 0)))
     engine.reset(seed, MatchSetup(decks=decks, shuffle=ShuffleMode.NONE, start_tick=start_tick))
     state = engine.state()
     for b in builders.values():
@@ -180,27 +182,37 @@ def play_out(
                 cmd = parser.parse(int(rng.choice(legal)), state, team)
                 if cmd is not None:
                     commands.append(cmd)
-        for r in engine.step(commands, CADENCES[step % len(CADENCES)]):
+        results = engine.step(commands, CADENCES[step % len(CADENCES)])
+        after = engine.state()
+        for r in results:
             if r.status != DeployStatus.OK:
                 continue
+            # Under a command delay the command runs, and is paid, later: the tick the
+            # engine's pending row says. A log records a play when it runs, and the seat's
+            # own log also knows when it was accepted.
+            kind, what = (1, r.hand_slot) if r.hand_slot >= HAND_SIZE else (0, r.card_id)
+            rows = [p for p in after.players[r.team].pending if (p[0], p[1]) == (kind, what)]
+            runs = after.tick + rows[-1][4] if rows else r.tick
+            seen["waited"] = seen.get("waited", 0) + int(runs > r.tick)
             if r.hand_slot >= HAND_SIZE:
                 seen["pressed"][r.team] += 1
                 for (team, _flag), log in logs.items():
                     if r.team == team:
-                        log.own_press(r.tick, cost[r.team])
+                        log.own_press(runs, cost[r.team], accepted=r.tick)
                     else:
-                        log.enemy_press(r.tick, cost[r.team])
+                        log.enemy_press(runs, cost[r.team])
                 continue
             plays[r.team] += 1
             name = names[r.card_id]
             seen["played"][name] = seen["played"].get(name, 0) + 1
             for (team, _flag), log in logs.items():
                 if r.team == team:
-                    log.own_play(r.tick + (shift if team == BLUE else 0), r.card_id)
+                    shifted = shift if team == BLUE else 0
+                    log.own_play(runs + shifted, r.card_id, accepted=r.tick + shifted)
                 else:
-                    log.enemy_play(r.tick, r.card_id)
+                    log.enemy_play(runs, r.card_id)
         step += 1
-        state = engine.state()
+        state = after
     return Played(mismatches, plays, {k[0]: v.unaffordable for k, v in logs.items()}, seen)
 
 
@@ -262,6 +274,31 @@ def test_plant_a_log_one_tick_late_is_caught(engine):
     )
     assert run.mismatches, "PLANT DID NOT LAND: a one-tick-late log matched the env"
     assert all(" seat 0 " in m for m in run.mismatches), run.mismatches[:5]
+
+
+@pytest.mark.skipif(not core_available(), reason=str(CORE_IMPORT_ERROR))
+@pytest.mark.parametrize("decks", [DECKS, "mirror"], ids=["plain", "mirror"])
+def test_the_log_gives_the_env_fields_under_a_command_delay(decks: Any) -> None:
+    """Every field against the env's vector, at every step, with commands waiting 21 and 22
+    ticks (the two seats' delays) between being accepted and running.
+
+    Under a delay a play is paid, and moves the hand, when it runs; until then the seat knows
+    its own tap, so the env's vector flags the waiting card, shows the elixir it holds and
+    prices a new play from the bar less that. The log gives the same from each own play's
+    accepted tick (``own_play(..., accepted=)``). The opponent's waiting plays are never an
+    input, on either side. With the Mirror in both decks, the price of a Mirror follows the
+    last ACCEPTED play, which can be one still waiting.
+    """
+    engine = RustEngine(command_delay_ticks=(21, 22))
+    if not getattr(engine, "command_delay_ticks", (0, 0))[0]:
+        pytest.skip("SKIPPED, NOT PASSED: this engine has no command delay")
+    start = engine.rules().deploy_lockout_ticks
+    named = MIRROR_DECKS if decks == "mirror" else decks
+    run = play_out(engine, seed=7, start_tick=start, ticks=2400, decks_named=named)
+    assert run.seen.get("waited", 0) > 20, f"only {run.seen.get('waited')} commands waited"
+    assert not run.mismatches, (
+        f"{len(run.mismatches)} field mismatches, first: {run.mismatches[:5]}"
+    )
 
 
 #: Both seats hold a Golden Knight, first in the dealt order, and a Giant for him to dash at.
@@ -711,3 +748,19 @@ def test_a_missing_card_is_reported_as_the_catalogue_not_the_deck():
     assert "has 'Arrows' at id 9" in message, message
     assert "have '<end>' there" in message, message
     assert "(10 pinned names, 9 loaded)" in message, message
+
+
+def test_a_command_waits_from_the_tick_after_it_is_accepted_through_the_tick_it_runs(mock_cards):
+    """An observation at tick t sees what happened before t: a command accepted at tick a is not
+    waiting at a, is waiting from a + 1, is still waiting at the tick r it runs (it runs, and is
+    paid, as tick r runs), and has run at r + 1, where the hand has cycled."""
+    deck = deck_of(mock_cards, DECKS[0])
+    memory = PublicLogMemory(mock_cards, deck, card_names=names_of(mock_cards), start_tick=90)
+    card = deck[1]
+    memory.own_play(130, card, accepted=100)
+    waiting = {t: memory.observe(t)["own_hand_pending"].tolist() for t in (100, 101, 130, 131)}
+    assert waiting[100] == [0, 0, 0, 0]
+    assert waiting[101] == waiting[130] == [0, 1, 0, 0]
+    assert waiting[131] == [0, 0, 0, 0]
+    assert card not in memory.hand
+    assert memory.own_pending() == []

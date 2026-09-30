@@ -75,6 +75,8 @@ from royalegym.protocol import (
 __all__ = ["BOARD_FIELDS", "PublicLogMemory"]
 
 _OWN, _ENEMY = 0, 1
+#: ``PlayerState.pending`` row kinds.
+_KIND_PLAY, _KIND_PRESS = 0, 1
 
 
 class PublicLogMemory:
@@ -133,6 +135,10 @@ class PublicLogMemory:
         self.mirror_target: int | None = None
         self._pending: list[tuple[int, int, int, int]] = []  # (tick, order fed, side, card)
         self._presses: list[tuple[int, int, int, int]] = []  # (tick, order fed, side, elixir)
+        #: This seat's commands under a delay: (accepted, runs, kind, what, cost or None).
+        self._waiting: list[tuple[int, int, int, int, int | None]] = []
+        #: This seat's plays that were not a Mirror, (the tick each ran, card), oldest first.
+        self._ran: list[tuple[int, int]] = []
         self._fed = 0
         self.memory = MatchMemory(n, self.law)
         self.memory.bind(self.cards)
@@ -164,15 +170,34 @@ class PublicLogMemory:
 
     # -- the log ---------------------------------------------------------------
 
-    def own_play(self, tick: int, card: int) -> None:
+    def own_play(self, tick: int, card: int, *, accepted: int | None = None) -> None:
+        """This seat's play of ``card``, paid and cycled at ``tick``, the tick it RUNS.
+
+        Under a command delay a play is accepted earlier than it runs, and until it runs the
+        seat knows its own tap: pass the tick it was accepted as ``accepted``, and between the
+        two the fields show it waiting (``own_pending``). Without it the play waits for nothing.
+        """
         self._feed(tick, _OWN, card)
+        self._wait(accepted, tick, _KIND_PLAY, card, None)
 
     def enemy_play(self, tick: int, card: int) -> None:
         self._feed(tick, _ENEMY, card)
 
-    def own_press(self, tick: int, elixir: int) -> None:
-        """An ability press of this seat's at ``tick``, paid ``elixir`` from its bar."""
+    def own_press(self, tick: int, elixir: int, *, accepted: int | None = None) -> None:
+        """An ability press of this seat's at ``tick``, paid ``elixir`` from its bar; under a
+        command delay, ``accepted`` is the tick it was accepted, as for ``own_play``."""
         self._feed_press(tick, _OWN, elixir)
+        self._wait(accepted, tick, _KIND_PRESS, -1, int(elixir))
+
+    def _wait(self, accepted: int | None, runs: int, kind: int, what: int, cost: int | None) -> None:
+        if accepted is None or accepted >= runs:
+            return
+        if accepted < self.memory.tick:
+            raise ValueError(
+                f"a command accepted at tick {accepted} arrived after tick {self.memory.tick} "
+                "was observed"
+            )
+        self._waiting.append((int(accepted), int(runs), kind, int(what), cost))
 
     def enemy_press(self, tick: int, elixir: int) -> None:
         """An ability press of the opponent's at ``tick``, paid ``elixir`` from its bar."""
@@ -220,15 +245,41 @@ class PublicLogMemory:
         (this side's last play that was not a Mirror) plus one, and -1 while there is none.
         This is ``PlayerState.hand_costs``, rebuilt from the log.
         """
+        target = self.mirror_target
         costs = []
         for card in self.hand:
             if self.cards[card].placement != Placement.MIRROR:
                 costs.append(int(self.cards[card].elixir))
-            elif self.mirror_target is None:
+            elif target is None:
                 costs.append(-1)
             else:
-                costs.append(int(self.cards[self.mirror_target].elixir) + 1)
+                costs.append(int(self.cards[target].elixir) + 1)
         return costs
+
+    def _price_at(self, card: int, tick: int) -> int:
+        """What a play of ``card`` accepted at ``tick`` holds: its listed elixir, or for a
+        Mirror the copy's plus one, the copy being the side's last play that had RUN by then
+        (the engine prices a waiting command when it accepts it)."""
+        if self.cards[card].placement != Placement.MIRROR:
+            return int(self.cards[card].elixir)
+        target = None
+        for runs, played in self._ran:
+            if runs < tick:
+                target = played
+        return -1 if target is None else int(self.cards[target].elixir) + 1
+
+    def own_pending(self) -> list[list[int]]:
+        """This seat's commands accepted and not run as of the last ``observe``, as the engine
+        reports them (``PlayerState.pending``): ``[kind, what, x, y, ticks_left, cost]``, kind 0
+        a play of card ``what`` and kind 1 a press. The tap's x and y are not in a log and are
+        not read by the fields."""
+        now = self.memory.tick
+        rows = []
+        for accepted, runs, kind, what, cost in sorted(self._waiting, key=lambda w: w[1]):
+            if accepted < now <= runs:
+                price = cost if kind == _KIND_PRESS else self._price_at(what, accepted)
+                rows.append([kind, what, 0, 0, runs - now, int(price)])
+        return rows
 
     def observe(self, tick: int) -> dict[str, np.ndarray]:
         """The fields at ``tick``, from every play made before it. The clock only moves on."""
@@ -259,6 +310,11 @@ class PublicLogMemory:
                 }
             memory.advance(tick, clock.regular_ticks, clock.overtime, own, enemy, **presses)
             memory.show_own_hand(self.hand, self.queue[0])
+            self._waiting = [w for w in self._waiting if w[1] >= tick]
+        # Passed only when a command waits, so a log without a delay still runs on a RoyaleGym
+        # whose fair_fields() takes no own_pending (before 5565645).
+        waiting = self.own_pending()
+        extra = {"own_pending": waiting} if waiting else {}
         return fair_fields(
             memory,
             clock,
@@ -269,6 +325,7 @@ class PublicLogMemory:
             self.max_mana,
             enemy_last_card=self.enemy_last_card,
             hand_costs=self.hand_costs(),
+            **extra,
         )
 
     # -- internals ---------------------------------------------------------------
@@ -284,3 +341,4 @@ class PublicLogMemory:
         self.queue.append(card)
         if self.cards[card].placement != Placement.MIRROR:
             self.mirror_target = card
+            self._ran.append((tick, card))
