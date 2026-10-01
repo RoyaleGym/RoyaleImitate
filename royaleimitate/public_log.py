@@ -27,9 +27,9 @@ presses needs RoyaleGym 276c3e9 or later; a log without them runs on older ones 
 The env makes presses only when RoyaleGym's action parser has its opt-in ability buttons on;
 a log of real matches has one wherever a champion's or hero's ability was used.
 
-THE COMMAND DELAY. Under RoyaleSim r16's command delay a play or a press is accepted on one
-tick and runs, and is paid, some ticks later; the hand and the bar move only when it runs, as
-the client's do. Log each at the tick it RUNS. The seat knows its own taps, so give its own
+THE COMMAND DELAY. With a command delay (RoyaleGym's ``command_delay_ticks``, on an engine
+that has one) a play or a press is accepted on one tick and runs, and is paid, some ticks
+later; the hand and the bar move only when it runs, as the client's do. Log each at the tick it RUNS. The seat knows its own taps, so give its own
 commands the tick they were accepted too (``own_play(..., accepted=)``, ``own_press(...,
 accepted=)``): from the tick after that through the tick it runs, the fields show the command
 waiting, as the env's do (``own_hand_pending``, ``own_pending_cost``, and a hand priced from

@@ -35,9 +35,9 @@ env at every step.
 
 ## The command delay
 
-Under RoyaleSim r16's command delay, a play or a press is accepted on one tick and runs some ticks
-later. It is paid, and the hand moves, only when it runs, as in the client. Log each one at the tick
-it runs.
+With a command delay (RoyaleGym's `command_delay_ticks`, on an engine that has one), a play or a
+press is accepted on one tick and runs some ticks later. It is paid, and the hand moves, only when
+it runs, as in the client. Log each one at the tick it runs.
 
 A seat knows its own taps, so give its own commands the tick they were accepted too: `own_play(tick,
 card, accepted=...)` and `own_press(tick, elixir, accepted=...)`. From the tick after that through
