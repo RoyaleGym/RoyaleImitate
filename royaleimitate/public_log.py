@@ -29,14 +29,15 @@ a log of real matches has one wherever a champion's or hero's ability was used.
 
 THE COMMAND DELAY. With a command delay (RoyaleGym's ``command_delay_ticks``, on an engine
 that has one) a play or a press is accepted on one tick and runs, and is paid, some ticks
-later; the hand and the bar move only when it runs, as the client's do. Log each at the tick it RUNS. The seat knows its own taps, so give its own
-commands the tick they were accepted too (``own_play(..., accepted=)``, ``own_press(...,
-accepted=)``): from the tick after that through the tick it runs, the fields show the command
-waiting, as the env's do (``own_hand_pending``, ``own_pending_cost``, and a hand priced from
-the bar less what waits). A waiting play holds the price it had when accepted; a Mirror's is
-its copy's plus one, the copy being the seat's last play that had run by then. The
-opponent's waiting commands are never an input. A log without accepted ticks shows nothing
-waiting and runs on RoyaleGym before 5565645 as before.
+later; the hand and the bar move only when it runs, as the client's do. Log each at the tick
+it RUNS. The seat knows its own taps, so give its own commands the tick they were accepted
+too (``own_play(..., accepted=)``, ``own_press(..., accepted=)``): from the tick after that
+through the tick it runs, the fields show the command waiting, as the env's do
+(``own_hand_pending``, ``own_pending_cost``, and a hand priced from the bar less what
+waits). A waiting play holds the price it had when accepted; a Mirror's is its copy's plus
+one, the copy being the seat's last play that had run by then. The opponent's waiting
+commands are never an input. A log without accepted ticks shows nothing waiting and runs on
+RoyaleGym before 5565645 as before.
 
 THE CATALOGUE PIN. Card ids are positions in the catalogue, so making one more card
 loadable renumbers every later id. ``card_names`` pins the catalogue by name, and the
