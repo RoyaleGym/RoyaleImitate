@@ -120,6 +120,7 @@ def play_out(
             own_elixir_milli=state.players[team].elixir_milli,
             enemy_elixir_milli=state.players[1 - team].elixir_milli,
             enemy_last_card=flag,
+            refill_timer=not isinstance(engine, MockEngine),
         )
         for team in TEAMS
         for flag in builders

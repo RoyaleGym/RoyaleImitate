@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "royaleimitate"
-version = "0.2.1"
+version = "0.2.2"
 description = "RoyaleImitate: imitation learning for RoyaleLearn, as an optional add-on"
 requires-python = ">=3.12"
 license = { text = "MIT" }

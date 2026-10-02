@@ -46,8 +46,11 @@ pins (the one its config names), not one read back from the catalogue: reading i
 would make the check compare the catalogue with itself.
 
 THE ASSUMPTIONS, EACH CHECKED AGAINST AN ENGINE IN tests/test_public_log.py:
-    * a played card's hand slot takes the next card, and the played card goes to the
-      back of the queue;
+    * a played card goes to the back of the queue and its hand slot empties; the slot
+      waits for the side's refill timer (``match.HAND_REFILL_MS_1X`` / ``_2X`` / ``_3X``,
+      by the elixir rate): an idle timer refills it at once from the front of the queue
+      and restarts at its period, and a running one refills the lowest empty slot when
+      it runs out (with no such keys in the calibration, a refill is instant);
     * a play at tick p is paid before tick p runs and shows in any observation at a
       tick after p;
     * a match still running at the end of regulation is in overtime;
@@ -78,6 +81,7 @@ import numpy as np
 from royalegym.obs import BOARD_FIELDS, FAIR_FIELDS, MatchClock, MatchMemory, fair_fields
 from royalegym.protocol import (
     DECK_SIZE,
+    EMPTY_CARD,
     HAND_SIZE,
     Calibration,
     CardInfo,
@@ -107,6 +111,9 @@ class PublicLogMemory:
     read the fields with ``observe(tick)``. An observation at tick T sees exactly the
     plays made before T, as the env's does.
 
+    ``refill_timer`` (default on, as in the client and RustEngine) makes a played card's slot
+    wait for the refill timer; off, a slot refills at once, as in RoyaleGym's MockEngine.
+
     ``unaffordable`` counts plays the counted bar could not pay, (own, enemy). The
     engine refuses those, so on a log an engine produced it stays (0, 0). Anywhere else
     a non-zero count means a play is missing from the log or the elixir law is not the
@@ -124,6 +131,7 @@ class PublicLogMemory:
         own_elixir_milli: int | None = None,
         enemy_elixir_milli: int | None = None,
         enemy_last_card: bool = False,
+        refill_timer: bool = True,
     ) -> None:
         self.cards = list(cards)
         self.card_names = list(card_names)
@@ -145,6 +153,11 @@ class PublicLogMemory:
         self.enemy_last_card = enemy_last_card
         self.hand = deck[:HAND_SIZE]
         self.queue = deck[HAND_SIZE:]
+        #: The hand refill timer, ms left, and its period at the 1x, 2x and 3x rates.
+        self.refill_ms = 0
+        self._refill_periods = _refill_periods(cal) if refill_timer else (0, 0, 0)
+        #: The first tick whose refill step has not run yet.
+        self._refill_tick = int(start_tick)
         #: What a Mirror played now would copy: this side's last play that was not a Mirror.
         self.mirror_target: int | None = None
         self._pending: list[tuple[int, int, int, int]] = []  # (tick, order fed, side, card)
@@ -264,7 +277,9 @@ class PublicLogMemory:
         target = self.mirror_target
         costs = []
         for card in self.hand:
-            if self.cards[card].placement != Placement.MIRROR:
+            if card == EMPTY_CARD:
+                costs.append(-1)
+            elif self.cards[card].placement != Placement.MIRROR:
                 costs.append(int(self.cards[card].elixir))
             elif target is None:
                 costs.append(-1)
@@ -310,10 +325,12 @@ class PublicLogMemory:
             enemy: list[tuple[int, int]] = []
             for when, _, side, card in due:
                 if side == _OWN:
+                    self._refill_until(when)
                     self._cycle(when, card)
                     own.append((when, card))
                 else:
                     enemy.append((when, card))
+            self._refill_until(tick)
             pressed = sorted(p for p in self._presses if p[0] < tick)
             self._presses = [p for p in self._presses if p[0] >= tick]
             # Passed only when there are any, so a log without presses still runs on a
@@ -347,14 +364,54 @@ class PublicLogMemory:
     # -- internals ---------------------------------------------------------------
 
     def _cycle(self, tick: int, card: int) -> None:
-        """The played slot takes the next card; the played card joins the back of the queue."""
+        """The played card joins the back of the queue and its slot empties; an idle refill
+        timer fills the lowest empty slot at once and is set one tick above its period, so the
+        refill step of the play's own tick leaves it at the period."""
         if card not in self.hand:
             raise ValueError(
                 f"own play of card {card} at tick {tick}, but the hand is {self.hand}: "
                 "the log or the deck order is wrong"
             )
-        self.hand[self.hand.index(card)] = self.queue.pop(0)
         self.queue.append(card)
+        self.hand[self.hand.index(card)] = EMPTY_CARD
+        if self.refill_ms == 0:
+            self._fill()
+            self.refill_ms = self._refill_period(tick) + self.law.tick_ms
         if self.cards[card].placement != Placement.MIRROR:
             self.mirror_target = card
             self._ran.append((tick, card))
+
+    def _fill(self) -> None:
+        """The front of the queue into the lowest empty hand slot."""
+        self.hand[self.hand.index(EMPTY_CARD)] = self.queue.pop(0)
+
+    def _refill_period(self, tick: int) -> int:
+        clock = MatchClock.at(tick, self.calibration)
+        rate = self.law.rate_at(tick, clock.regular_ticks, clock.overtime)
+        return self._refill_periods[rate - 1]
+
+    def _refill_until(self, tick: int) -> None:
+        """Run the refill timer's step of every tick before ``tick`` not yet run: it counts
+        down, and at 0 it refills the lowest empty slot and restarts at the period."""
+        while self._refill_tick < tick:
+            if self.refill_ms == 0 and EMPTY_CARD not in self.hand:
+                self._refill_tick = tick
+                break
+            self.refill_ms = max(self.refill_ms - self.law.tick_ms, 0)
+            if self.refill_ms == 0 and EMPTY_CARD in self.hand:
+                self._fill()
+                self.refill_ms = self._refill_period(self._refill_tick)
+            self._refill_tick += 1
+
+
+def _refill_periods(cal: Calibration) -> tuple[int, int, int]:
+    """The refill timer's period at each elixir rate, ms; all 0 (an instant refill) when the
+    calibration has no refill keys, as on an engine before the timer."""
+    try:
+        return (
+            cal.int("match.HAND_REFILL_MS_1X"),
+            cal.int("match.HAND_REFILL_MS_2X"),
+            cal.int("match.HAND_REFILL_MS_3X"),
+        )
+    except KeyError:
+        return (0, 0, 0)
