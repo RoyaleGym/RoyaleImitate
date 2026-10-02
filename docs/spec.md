@@ -108,7 +108,8 @@ as before and keeps its `run_id`. Every other field is always set when an identi
 A record's `digest` is of the section with every `path` and its `alarms` removed. The section carries
 each file's digest, so the content of every referenced file is in the identity, and moving a folder
 is not a new experiment. A section provided by an installed package also records the package's
-distribution, `__version__` and commit; a package whose commit cannot be named refuses the run.
+distribution, `__version__` and commit; a package with no commit to name (installed from a
+wheel) is named `content:<sha256>` over its files.
 
 At every start, fresh or resumed, each referenced folder is hashed and compared with the digest the
 config states, and a difference is refused with the path, the stated digest and the digest found.
