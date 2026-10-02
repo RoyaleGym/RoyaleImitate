@@ -1,4 +1,4 @@
-# RoyaleImitate
+<p align="center"><img src="docs/media/logo.png" width="128" alt="The RoyaleImitate logo: a purple crown shield with two white cards on it, outlined in gold"></p><h1 align="center">RoyaleImitate</h1>
 
 <p align="center"><a href="https://github.com/RoyaleGym/RoyaleImitate/actions/workflows/suite.yml"><img alt="CI" src="https://github.com/RoyaleGym/RoyaleImitate/actions/workflows/suite.yml/badge.svg"></a> <img alt="License" src="https://img.shields.io/github/license/RoyaleGym/RoyaleImitate?style=flat-square&color=555"> <img alt="Python" src="https://img.shields.io/badge/python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white"> <a href="https://royalegym.github.io/RoyaleGym/"><img alt="Docs" src="https://img.shields.io/badge/docs-royalegym.github.io-8957e5?style=flat-square&logo=readthedocs&logoColor=white"></a> <a href="https://discord.gg/4D2BS5JBHP"><img alt="Discord" src="https://img.shields.io/discord/1551699576304705647?style=flat-square&logo=discord&logoColor=white&label=discord&color=5865F2"></a> <img alt="Last commit" src="https://img.shields.io/github/last-commit/RoyaleGym/RoyaleImitate?style=flat-square&color=555"></p>
 
