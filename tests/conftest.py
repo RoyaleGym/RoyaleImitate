@@ -32,10 +32,13 @@ def declared_entry_points() -> dict[str, str]:
 @pytest.fixture(scope="session", autouse=True)
 def installed(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
     site = tmp_path_factory.mktemp("site")
-    info = site / "royaleimitate-0.1.0.dist-info"
+    # The version pyproject.toml declares, so the metadata says what this checkout is.
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    version = project["version"]
+    info = site / f"royaleimitate-{version}.dist-info"
     info.mkdir()
     (info / "METADATA").write_text(
-        "Metadata-Version: 2.1\nName: royaleimitate\nVersion: 0.1.0\n", encoding="utf-8"
+        f"Metadata-Version: 2.1\nName: royaleimitate\nVersion: {version}\n", encoding="utf-8"
     )
     points = ["[royalelearn.extensions]"] + [
         f"{key} = {value}" for key, value in declared_entry_points().items()
