@@ -1,6 +1,6 @@
 # RoyaleImitate
 
-[![suite](https://github.com/RoyaleGym/RoyaleImitate/actions/workflows/suite.yml/badge.svg)](https://github.com/RoyaleGym/RoyaleImitate/actions/workflows/suite.yml)
+<p align="center"><a href="https://github.com/RoyaleGym/RoyaleImitate/actions/workflows/suite.yml"><img alt="CI" src="https://github.com/RoyaleGym/RoyaleImitate/actions/workflows/suite.yml/badge.svg"></a> <img alt="License" src="https://img.shields.io/github/license/RoyaleGym/RoyaleImitate?style=flat-square&color=555"> <img alt="Python" src="https://img.shields.io/badge/python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white"> <a href="https://royalegym.github.io/RoyaleGym/"><img alt="Docs" src="https://img.shields.io/badge/docs-royalegym.github.io-8957e5?style=flat-square&logo=readthedocs&logoColor=white"></a> <a href="https://discord.gg/4D2BS5JBHP"><img alt="Discord" src="https://img.shields.io/discord/1551699576304705647?style=flat-square&logo=discord&logoColor=white&label=discord&color=5865F2"></a> <img alt="Last commit" src="https://img.shields.io/github/last-commit/RoyaleGym/RoyaleImitate?style=flat-square&color=555"></p>
 
 Start a Clash Royale bot from one you already have, and keep it close to that bot while it learns.
 It is an optional add-on to RoyaleLearn, the trainer: leave it out and nothing changes.
@@ -9,7 +9,7 @@ It is an optional add-on to RoyaleLearn, the trainer: leave it out and nothing c
 
     pip install "royalegym[all]"
 
-This is the `[imitate]` part. Until it is on PyPI, see the [guide's Install](docs/guide.md#install).
+This is the `[imitate]` part. Until it is on PyPI, see [Install](https://royalegym.github.io/RoyaleGym/install/) for the exact line.
 
 ## Try it
 
@@ -34,7 +34,8 @@ The student starts from the teacher's weights; [examples/minimal.py](examples/mi
 
 ## Next
 
-- The guide: [docs/guide.md](docs/guide.md). The full contract (Advanced): [docs/spec.md](docs/spec.md)
+- The docs: [royalegym.github.io/RoyaleGym](https://royalegym.github.io/RoyaleGym/), and the [RoyaleImitate page](https://royalegym.github.io/RoyaleGym/resources/royaleimitate/)
+- The guide: [guide](https://royalegym.github.io/RoyaleGym/repos/royaleimitate/guide/). The full contract (Advanced): [spec](https://royalegym.github.io/RoyaleGym/repos/royaleimitate/spec/)
 - Questions: [Discord](https://discord.gg/4D2BS5JBHP)
 
 MIT licensed. See [LICENSE](LICENSE).
