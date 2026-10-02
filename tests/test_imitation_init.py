@@ -502,3 +502,37 @@ def test_a_section_contributes_only_what_its_run_can_feed() -> None:
     for config in (init_only, references_only):
         assert extension_alarms(config) == ()
         assert schema_contributions(config) == (SchemaContribution(),)
+
+
+def _factored(tmp_path: Path, **overrides: Any) -> cfg.RunConfig:
+    base = tiny_config(tmp_path)
+    net = msgspec.structs.replace(base.net, policy_head="factored", factored_act_init=0.2)
+    return tiny_config(tmp_path, net=net, **overrides)
+
+
+def test_a_factored_actor_round_trips_through_an_artifact(tmp_path: Path) -> None:
+    """Written, read back by its folder alone and loaded: the same net, the same log-probs.
+
+    Its spec.json names the head and the gate's starting value; the warm start's self-test
+    reproduces the recorded probe log-probabilities exactly; a pointer run refuses it."""
+    from royaleimitate.artifacts import probe_log_probs
+
+    folder = tmp_path / "factored"
+    digest = seeded_artifact(_factored(tmp_path / "donor"), folder, coordinator)
+    artifact = read_actor_artifact(folder)
+    assert artifact.spec.meta["policy_head"] == "factored"
+    assert artifact.spec.meta["factored_act_init"] == 0.2
+    assert artifact.probe is not None
+    config = with_imitation(
+        _factored(tmp_path / "run"), init={"path": str(folder), "sha256": digest}
+    )
+    with coordinator(config) as run:
+        assert run.extension_facts["warm_start"]["self_test"] == 0.0
+        log_probs, _mask = probe_log_probs(run.model.actor, run.row_codec(), artifact.probe.rows)
+    assert torch.equal(torch.as_tensor(log_probs), torch.as_tensor(artifact.probe.log_probs))
+    with (
+        pytest.raises(IdentityMismatch) as refused,
+        coordinator(_init_config(tmp_path / "pointer", folder, digest)),
+    ):
+        pass
+    assert "arch_digest" in refused.value.differences
