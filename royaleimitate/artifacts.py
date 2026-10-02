@@ -39,6 +39,7 @@ __all__ = [
     "load_actor_state",
     "probe_log_probs",
     "read_actor_artifact",
+    "save_actor",
     "self_test",
     "verify_artifact",
     "write_actor_artifact",
@@ -256,3 +257,50 @@ def load_actor_state(actor: Any, artifact: ActorArtifact, *, what: str) -> None:
         {name: tensor.to(reference[name].device) for name, tensor in artifact.state.items()},
         strict=True,
     )
+
+
+#: How many decisions ``save_actor`` plays to make the probe rows, two seats each.
+SAVE_PROBE_STEPS = 32
+
+
+def save_actor(learner: Any, folder: str | Path, *, seed: int = 0) -> str:
+    """Write a ``royalelearn.Learner``'s trained actor as an actor artifact. Returns its digest.
+
+    The folder is what ``warm_start.init`` and a ``snapshot`` reference read, and the digest is
+    the ``sha256`` a config names it by. The probe rows are both seats' observations from a short
+    battle of the learner's own ``build_env``, with random legal moves; the log-probabilities the
+    actor gives them are recorded beside the weights, so a run that loads the folder can check it
+    computes the same policy. Call ``learner.learn`` first.
+    """
+    run = getattr(learner, "run", None)
+    if run is None:
+        raise PreflightError("there is no trained actor to save yet: call learner.learn() first")
+    codec = run.row_codec()
+    env = learner.build_env()
+    rng = np.random.default_rng(seed)
+    observations: list[Mapping[str, Any]] = []
+    try:
+        obs, _info = env.reset(seed=seed)
+        for _ in range(SAVE_PROBE_STEPS):
+            actions = {}
+            for agent, seat in obs.items():
+                observations.append(seat)
+                legal = np.flatnonzero(np.asarray(seat["action_mask"]))
+                actions[agent] = int(rng.choice(legal))
+            obs, _rewards, terminated, truncated, _info = env.step(actions)
+            if any(terminated.values()) or any(truncated.values()):
+                obs, _info = env.reset(seed=seed + 1)
+    finally:
+        close = getattr(env, "close", None)
+        if close is not None:
+            close()
+    rows = codec.pack(observations)
+    actor = run.model.actor
+    log_probs, _mask = probe_log_probs(actor, codec, rows)
+    write_actor_artifact(
+        folder,
+        actor.state_dict(),
+        run.snapshot_template,
+        probe=ProbeSet(rows=rows, log_probs=log_probs),
+    )
+    return artifact_digest(folder)
