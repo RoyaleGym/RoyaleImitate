@@ -36,9 +36,17 @@ And one class that needs no engine:
 
 ## Install
 
-Install RoyaleLearn first, following its README, including its torch extra: this package needs
-torch and safetensors. That leaves you in a `Royale` folder with the public repos side by side
-and one virtual environment they share.
+`royalegym[all]` already includes RoyaleImitate. Nothing more to install: follow
+[Install](https://royalegym.github.io/RoyaleGym/install/).
+
+RoyaleLearn finds the two sections through this package's entry points. A config that names
+`warm_start` or `imitation` without this package installed is refused at load, naming the section.
+
+### Working on RoyaleImitate itself
+
+Build RoyaleLearn from source first, following its guide's "Build from source", including its
+torch extra: this package needs torch and safetensors. That leaves you in a `Royale` folder with
+the public repos side by side and one virtual environment they share.
 
 These are Windows PowerShell commands, like RoyaleLearn's. On macOS or Linux, use
 `.venv/bin/python` in place of `.venv\Scripts\python`. From the `Royale` folder:
@@ -47,9 +55,6 @@ These are Windows PowerShell commands, like RoyaleLearn's. On macOS or Linux, us
 git clone https://github.com/RoyaleGym/RoyaleImitate.git
 .venv\Scripts\python -m pip install -e RoyaleImitate --no-deps
 ```
-
-RoyaleLearn finds the two sections through this package's entry points. A config that names
-`warm_start` or `imitation` without this package installed is refused at load, naming the section.
 
 ## Use
 
