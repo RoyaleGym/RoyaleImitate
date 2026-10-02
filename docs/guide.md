@@ -74,9 +74,8 @@ the start.
 
 From a `royalelearn.Learner`, `royaleimitate.save_actor(learner, folder)` writes one and returns
 its digest; [examples/minimal.py](../examples/minimal.py) does that and starts a second run from
-it. Otherwise no command in the public packages writes a saved policy folder yet. `royalelearn bc` and
-`royalelearn export`, which would, are specified in [docs/spec.md](spec.md) and not built.
-Until they are, write one from Python with `royaleimitate.artifacts.write_actor_artifact`, the
+it. Recording a teacher and cloning it ([docs/spec.md](spec.md) 19.12) is not built yet.
+Any other way to write one is from Python with `royaleimitate.artifacts.write_actor_artifact`, the
 way `write_from_run` in `tests/imitation_support.py` does: it stores the actor's weights and the
 probe rows the load is checked against. A writer that builds its own `SnapshotSpec` rather than
 taking a run's `snapshot_template` puts `royalelearn.learn.nets.head_meta(net)` in its `meta`, so

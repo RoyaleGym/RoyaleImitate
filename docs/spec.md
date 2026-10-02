@@ -10,7 +10,7 @@ one numbering.
 
 A run can start from a policy cloned from demonstrations, and can be held near a reference policy
 while it learns. This section is the contract for that machinery. It is generic: a demonstration is
-any timed log of card plays that can be driven through the run's own environment.
+any recorded play stored as shard rows (19.10).
 
 It lands as six packages, named here so that a config, a commit and a test can refer to them.
 Not all of it is built (checked 2026-09-28 against this repo's code):
@@ -19,9 +19,8 @@ Not all of it is built (checked 2026-09-28 against this repo's code):
 | --- | --- | --- | --- |
 | L1 | the `warm_start` and `imitation` config sections, their identity, actor init and the freeze | 19.1-19.5 | yes |
 | L2 | reference policies, the reference-KL regulariser and its adaptive coefficient | 19.6-19.9 | yes |
-| L3 | the replay driver: a timed log through the run's environment | 19.11 | no |
 | L4 | demonstration shards: the stored rows, keyed to the engine | 19.10 | yes, `royaleimitate.shards` |
-| L5 | `royalelearn bc`, the field-reference fit and the `demo_bc` regulariser | 19.12 | the fit only, as `royaleimitate fit-field-reference` |
+| L5 | recording and cloning, the field-reference fit and the `demo_bc` regulariser | 19.12 | the fit, as `royaleimitate fit-field-reference` |
 | L6 | checkpoint export and `royalelearn evaluate` | 19.13 | no |
 
 The commands that exist are `royaleimitate artifact-digest` and `royaleimitate
@@ -216,8 +215,7 @@ lam    = clamp(lam, min(t), max)            # stored in the checkpoint
 - When the actor is frozen, or no row was covered, there is no `m` and λ does not move.
 - λ is update state like `BackoffState` and is saved in the update's checkpoint folder. A resume
   restores it; a checkpoint written without the block restores the configured `start`.
-- `min(t)` can fall over the run: while it is high λ is protected, and once it drops λ can fall on
-  its own as long as the KL stays inside a budget that widens.
+- `min`, `max` and `budget` are schedules; λ stays inside `[min(t), max]`.
 
 `imitation/<name>/lambda` is the value the iteration used and `imitation/<name>/budget` is κ.
 
@@ -283,7 +281,7 @@ change of codec table. A packed row carries no static plane (the codec supplies 
 decode), so the reader checks each part's static planes against the run's and refuses a part from
 another arena rather than show it the run's.
 
-**Flags.** Bits 0 and 1 are the driver's (`projected`, `other_command`). A producer names its own
+**Flags.** Bits 0 and 1 are reserved (`projected`, `other_command`). A producer names its own
 from bit 8 up; the writer refuses a row carrying an unnamed bit.
 
 **The manifest** records the environment's `config()` without its truncation, `card_names`, the
@@ -310,74 +308,26 @@ independent.
 
 `frame_stack` above one is refused by the reader: a shard row is one frame.
 
-### 19.11 The replay driver (L3)
+### 19.11 Where demonstrations come from
 
-The replay driver (specified, not built) drives a `ReplayLog` through the run's own environment,
-built from the run's `EnvFactorySpec` with the truncation removed, and returns the rows a shard
-stores. A `ReplayLog` is:
+Demonstrations come from any source that yields shard rows (19.10). Replaying recorded logs
+through the environment is out of scope here.
 
-- `seed` and a `MatchSetup` (decks in the order the log implies, so `shuffle` is `NONE`);
-- per seat, the card plays as `(tick, card_id, x, y)` with `(x, y)` a tile in that seat's own
-  action frame, the one `GridActionParser.encode` takes, and the ticks of the seat's other
-  commands;
-- which seats are labelled;
-- optionally, the true outcome: the winner, each side's crowns and final tower count.
+### 19.12 Behaviour cloning, the field reference and `demo_bc` (L5)
 
-The env is reset with `options={"setup": log.setup}`. At each decision boundary from `first_tick`,
-for each seat:
+**Recording** (not built yet): a teacher -- a scripted bot or any saved policy -- plays both seats of
+battles in the run's own environment, and every decision it makes is a shard row, grouped by
+battle.
 
-- A play is **due** at the first boundary at or after its tick, one per seat per boundary, in order.
-- Due play: the slot is the card's position in the engine's hand; a card that is not in the hand is
-  an error in the log, raised, not a row. The action is `encode(slot, x, y)`. If the mask allows it,
-  it is applied and it is the label.
-- Otherwise the engine's `check_deploy` says why, and:
-  - `NOT_ENOUGH_ELIXIR`: the play waits and the row is not labelled. Waiting past `defer_limit`
-    boundaries is event **E3**.
-  - `OUT_OF_TERRITORY`: event **E2**. The log played where this engine's board does not allow.
-  - any other placement refusal: the nearest legal tile of the same slot within Chebyshev distance
-    `project_radius` is taken, flagged `PROJECTED`. None is event **E4**.
-  - `GAME_OVER`: event **E5**.
-- No play due: the label is the no-op. A boundary holding one of the seat's other commands is
-  labelled the no-op and flagged `OTHER_COMMAND`.
-- **E1**: the engine has destroyed more of a side's towers than the true outcome says it lost.
+**Cloning** (not built yet) trains the run's own actor, built by the run's network factory from its
+`net`, so its `arch_digest` is the run's. No critic is trained.
 
-The replay stops at the first event; no row after it is emitted. Rows before `first_tick`, rows
-with one legal action, and rows at or after `end_tick` are not emitted either. Both seats' plays
-are applied whether or not the seat is labelled.
-
-Per match it also returns the event list, the terminal agreement when the true outcome is given
-(winner, crowns, and each side's tower count), the env's reward on each row, a RoyaleGym `Trace`
-when the env has a recorder, and **the behaviour statistics of the labelled seats computed by the
-same function the run's metrics use** (hold rate, mean elixir at decision, play rate by elixir,
-per-card play rate given in hand, the top tile's share). So a demonstration's behaviour and a
-policy's are measured by one piece of code, and a difference between them is not a difference
-between two implementations.
-
-A driver hook, `on_boundary(env, seat_rows)`, lets the log's owner measure anything else at each
-boundary without this package knowing what it is.
-
-### 19.12 Behaviour cloning, the timing model and `demo_bc` (L5)
-
-**`royalelearn bc --config <run config> --shards <dir> --out <folder> [--bc <bc config>]`**
-(specified, not built) trains
-the run's own actor:
-built by the run's network factory from the run's `net`, so its `arch_digest` is the run's, with
-`net.noop_bias` kept (the no-op's bias learns around the constant). No critic is trained.
-
-- **Loss**: weighted masked cross-entropy through `MaskedCategorical`. A no-op row's target is
-  one-hot. A play row's target is `1 − tile_smoothing` on the played action and `tile_smoothing`
-  spread as a Gaussian of `tile_sigma` tiles over the same slot's legal tiles.
-  `label_smoothing_uniform` (default 0) mixes in a uniform over the legal set. No rebalancing: the
-  target's hold rate is the demonstrations' own.
-- **Reported by the chain rule**: play/wait cross-entropy, card cross-entropy given play, tile
-  cross-entropy given card, and on validation the NLL, per-flag NLL and the hold-rate calibration.
-- **Optimiser**: AdamW, cosine learning rate, weight decay off for norms, biases and embeddings,
-  gradient clip, early stopping on validation NLL. A **focus pass** re-weights rows carrying a
-  named flag for a fraction of an epoch.
-- **Reproducible**: the row order is a function of `master_seed`, and the artifact records the BC
-  config, the shard manifest digest, the engine key, any `allow_engine_mismatch` reason and the
-  validation metrics in `meta`.
-- **Output**: an actor artifact (19.2) with 1,024 validation rows as probe rows and their
+- **Loss**: cross-entropy of the labelled action under the masked distribution
+  (`MaskedCategorical`), weighted by each row's weight.
+- **Split**: by group (19.10), so a battle is wholly in training or wholly in validation.
+- **Optimiser**: AdamW with a standard learning-rate schedule, and early stopping on validation
+  NLL.
+- **Output**: an actor artifact (19.2) with validation rows as its probe rows and their
   log-probabilities, computed by the self-test's own function on the weights as saved.
 
 **`royaleimitate fit-field-reference --rows <file.npz> --fields a,b,c --out <folder>`** fits the
@@ -399,9 +349,8 @@ RoyaleLearn's `docs/harness-spec.md` section 19.13.
 ### 19.14 What stays out of the public packages
 
 The logs, the shards, the fitted references, the cloned weights and any run initialised from them
-live where the log's owner keeps them, under a path the config names with a digest. Nothing in this
-package reads a log format; the driver's input is the `ReplayLog` above, built by the owner's code,
-which is never a component and so never enters `user_code`.
+live where their owner keeps them, under a path the config names with a digest. Nothing in this
+package reads a log format.
 
 ### 19.15 Controls, each seen failing on a plant before it is trusted
 
@@ -419,6 +368,3 @@ which is never a component and so never enters `user_code`.
   weighting of `kl_tile` must break it.
 - **The shard round trip (L4).** Rows written and read back through the codec equal the rows the
   codec produces from the env's observation directly. Plant: a spatial value off by one quantum.
-- **The driver round trip (L3).** A battle played by a policy in the env, exported as a timed log
-  with its deck order and replayed, produces no events and the same labels at every boundary. Plant:
-  shifting one play by one boundary must produce a different label.
