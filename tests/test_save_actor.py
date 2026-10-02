@@ -54,6 +54,10 @@ def test_a_learner_saved_as_an_actor_starts_a_student_that_plays_the_same(
     assert artifact.probe is not None and artifact.probe.rows.shape[0] > 0
     live = teacher.run.model.actor.state_dict()
     assert all(torch.equal(artifact.state[k], live[k].float()) for k in live)
+    env = build_env()
+    obs, _ = env.reset(seed=5)
+    saved_bot = Learner.load_policy(folder, greedy=True)
+    assert 0 <= saved_bot(obs["blue"]) < len(obs["blue"]["action_mask"])
 
     init = {"path": str(folder), "sha256": digest}
     student = Learner(

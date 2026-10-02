@@ -21,7 +21,7 @@ from typing import Any
 
 import numpy as np
 
-from royalelearn.extensions import PreflightError
+from royalelearn.extensions import PreflightError, write_policy_record
 
 from .artifacts import ProbeSet, artifact_digest, probe_log_probs, write_actor_artifact
 from .shards import ShardContext, ShardReader, ShardWriter
@@ -137,7 +137,7 @@ def clone(
     if not reader.manifest.validation_rows:
         raise PreflightError(
             f"{demonstrations} has no row in the validation split, which holds out about one "
-            "battle in twenty: record more battles"
+            "battle in twenty: record 100 battles or more"
         )
     kwargs = dict(getattr(learner, "_kwargs", {}))
     kwargs["printer"] = lambda _line: None
@@ -218,4 +218,6 @@ def clone(
                 spec,
                 probe=ProbeSet(rows=probe_rows, log_probs=log_probs),
             )
+            # So that ``Learner.load_policy(out)`` plays the clone, as well as a warm start.
+            write_policy_record(out, run.spec, config.net)
     return artifact_digest(out)

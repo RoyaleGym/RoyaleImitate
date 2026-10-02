@@ -90,6 +90,12 @@ def test_clone_copies_the_teacher_and_a_student_starts_from_it(
     history = artifact.spec.meta["clone"]["validation_nll"]
     assert history[-1] < history[0], f"validation NLL did not fall: {history}"
 
+    # The clone plays on its own, before any RL: as a bot, legal on a fresh battle.
+    bot = Learner.load_policy(out, greedy=True)
+    env = build_env()
+    obs, _ = env.reset(seed=5)
+    assert bool(np.asarray(obs["blue"]["action_mask"])[bot(obs["blue"])])
+
     student = Learner(
         build_env,
         n_envs=2,
@@ -107,7 +113,7 @@ def test_clone_refuses_demonstrations_with_no_validation_battle(tmp_path: Path) 
     reader = ShardReader(few, ShardContext.of_config(learner.config))
     if reader.manifest.validation_rows:
         pytest.skip("this one battle happened to land in the validation split")
-    with pytest.raises(PreflightError, match="validation"):
+    with pytest.raises(PreflightError, match="record 100 battles or more"):
         clone(learner, few, tmp_path / "out", epochs=1)
 
 

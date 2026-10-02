@@ -303,4 +303,8 @@ def save_actor(learner: Any, folder: str | Path, *, seed: int = 0) -> str:
         run.snapshot_template,
         probe=ProbeSet(rows=rows, log_probs=log_probs),
     )
+    # So that ``Learner.load_policy(folder)`` plays it, as well as a warm start loading it.
+    from royalelearn.extensions import write_policy_record
+
+    write_policy_record(folder, run.spec, learner.config.net)
     return artifact_digest(folder)
