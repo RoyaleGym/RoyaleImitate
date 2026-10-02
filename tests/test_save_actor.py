@@ -22,7 +22,11 @@ from royalelearn.testing import PREFLIGHT
 torch = pytest.importorskip("torch")
 pytest.importorskip("safetensors")
 
-TINY = {"steps_per_update": 16, "_coordinator_kwargs": {"preflight_kwargs": PREFLIGHT}}
+TINY = {
+    "device": "cpu",
+    "steps_per_update": 16,
+    "_coordinator_kwargs": {"preflight_kwargs": PREFLIGHT},
+}
 
 
 def build_env():
@@ -75,6 +79,9 @@ def test_the_minimal_examples_flow_runs_on_mock_engine(
     spec.loader.exec_module(module)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(module, "build_env", build_env)
+    # The example says no device, so it takes a GPU when there is one; this one says there is
+    # none, which is CI's case and the CPU fallback's.
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     student = module.main(steps=32)
     assert student.steps >= 32
     assert os.path.isdir(tmp_path / "runs" / "teacher-actor")
