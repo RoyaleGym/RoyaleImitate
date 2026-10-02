@@ -127,7 +127,7 @@ def test_a_run_anchors_its_hold_rate_to_a_fitted_model(tmp_path: Path) -> None:
                 "name": "timing",
                 "reference": "timing",
                 "factor": "noop_marginal",
-                "budget": {"kind": "constant", "value": 0.05},
+                "budget": {"kind": "constant", "value": 0.1},
                 "coef": {"start": 1.0},
             }
         ],

@@ -58,17 +58,19 @@ git clone https://github.com/RoyaleGym/RoyaleImitate.git
 
 ## Use
 
-Add the sections to a run's config. For example, to start from a saved policy and hold it still for
-the first 80,000 environment steps:
+Add the sections to a run's config. For example, to start from a saved policy:
 
 ```json
 {
   "warm_start": {
-    "init": {"path": "artifacts/my-policy", "sha256": "<digest from artifact-digest>"},
-    "actor_lr_scale": {"kind": "piecewise", "points": [[0, 0.0], [80000, 1.0]]}
+    "init": {"path": "artifacts/my-policy", "sha256": "<digest from artifact-digest>"}
   }
 }
 ```
+
+`warm_start.actor_lr_scale`, a schedule over environment steps, can also hold the actor still for
+a while (a scale of 0) while the critic learns what a position is worth; by default it is 1 from
+the start.
 
 From a `royalelearn.Learner`, `royaleimitate.save_actor(learner, folder)` writes one and returns
 its digest; [examples/minimal.py](../examples/minimal.py) does that and starts a second run from

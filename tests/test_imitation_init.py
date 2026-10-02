@@ -45,7 +45,7 @@ def _block(**overrides: Any) -> dict[str, Any]:
                 "name": "bc",
                 "reference": "bc",
                 "budget": {"kind": "constant", "value": 0.1},
-                "coef": {"start": 0.3},
+                "coef": {"start": 1.0},
             }
         ],
     }
@@ -91,7 +91,7 @@ REG = _block()["regularisers"][0]
                     {
                         **REG,
                         "coef": {
-                            "start": 0.3,
+                            "start": 1.0,
                             "max": 0.1,
                             "min": {"kind": "constant", "value": 0.5},
                         },
@@ -101,7 +101,7 @@ REG = _block()["regularisers"][0]
             "coef.max 0.1 is below the largest floor",
         ),
         (
-            {"regularisers": [{**REG, "coef": {"start": 0.3, "band": 1.0}}]},
+            {"regularisers": [{**REG, "coef": {"start": 1.0, "band": 1.0}}]},
             "coef.band must be above 1",
         ),
         ({"regularisers": [{**REG, "coef": {"start": -1.0}}]}, "is negative"),
@@ -536,3 +536,25 @@ def test_a_factored_actor_round_trips_through_an_artifact(tmp_path: Path) -> Non
     ):
         pass
     assert "arch_digest" in refused.value.differences
+
+
+def test_a_reference_kl_needs_only_its_name_and_reference() -> None:
+    """The budget and the coefficient's start have library defaults, so an example need not
+    choose them."""
+    config = cfg.load_config(
+        {
+            "imitation": {
+                "references": {"bc": {"kind": "snapshot", "path": "a/bc", "sha256": "1" * 64}},
+                "regularisers": [{"kind": "reference_kl", "name": "bc", "reference": "bc"}],
+            }
+        }
+    )
+    (regulariser,) = config.imitation.regularisers
+    assert regulariser.coef.start == 1.0
+    assert regulariser.budget == cfg.ConstantSpec(0.1)
+    assert cfg.check_consistency(config) == []
+
+
+def test_the_minimal_example_chooses_no_regulariser_numbers() -> None:
+    text = (Path(__file__).resolve().parents[1] / "examples" / "minimal.py").read_text("utf-8")
+    assert '"budget"' not in text and '"coef"' not in text

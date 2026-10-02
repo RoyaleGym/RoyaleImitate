@@ -45,26 +45,21 @@ section carries its own alarm thresholds, which stay out of the identity as the 
 ```json
 {
 "warm_start": {
-  "init": {"path": "artifacts/bc-v1", "sha256": "<artifact digest>", "self_test_atol": 1e-5},
-  "actor_lr_scale": {"kind": "piecewise", "points": [[0, 0.0], [82080, 0.25], [98496, 1.0]]},
-  "alarms": {"handoff_window": 20, "handoff_kl": 0.05, "handoff_clip": 0.3, "ev_at_unfreeze": 0.3}
+  "init": {"path": "artifacts/my-policy", "sha256": "<artifact digest>"}
 },
 "imitation": {
   "references": {
-    "bc":     {"kind": "snapshot",  "path": "artifacts/bc-v1",     "sha256": "<artifact digest>"},
-    "timing": {"kind": "field_mlp", "path": "artifacts/timing-v1", "sha256": "<artifact digest>"}
+    "teacher": {"kind": "snapshot", "path": "artifacts/my-policy", "sha256": "<artifact digest>"}
   },
   "regularisers": [
-    {"kind": "reference_kl", "name": "bc", "reference": "bc", "factor": "joint",
-     "exclude_when": [],
-     "budget": {"kind": "piecewise", "points": [[0, 0.1], [547200, 0.2], [1368000, 1.0]]},
-     "coef": {"start": 0.3, "max": 10.0, "up": 1.5, "down": 1.5, "band": 1.5,
-              "min": {"kind": "piecewise", "points": [[0, 0.3], [547200, 0.001]]}}}
-  ],
-  "alarms": {"ref_kl_warn": 1.0, "lambda_saturated_patience": 10}
+    {"kind": "reference_kl", "name": "teacher", "reference": "teacher"}
+  ]
 }
 }
 ```
+
+Every other field has a default: a regulariser's `budget` (a constant 0.1), its `coef` (starting at
+1.0) and its `factor` (`joint`), and each section's alarm thresholds.
 
 - `init` (optional): the actor's starting weights (19.4).
 - `actor_lr_scale` (optional, a schedule): multiplies the actor's learning rate (19.5). Absent is 1.

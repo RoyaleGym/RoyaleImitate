@@ -33,13 +33,7 @@ def main(steps: int = 20_000) -> Learner:
             "imitation": {
                 "references": {"teacher": {"kind": "snapshot", **teacher_actor}},
                 "regularisers": [
-                    {
-                        "kind": "reference_kl",
-                        "name": "teacher",
-                        "reference": "teacher",
-                        "budget": {"kind": "constant", "value": 0.05},
-                        "coef": {"start": 0.3},
-                    }
+                    {"kind": "reference_kl", "name": "teacher", "reference": "teacher"}
                 ],
             },
         },

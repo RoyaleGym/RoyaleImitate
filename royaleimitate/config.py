@@ -111,7 +111,7 @@ class RowCondition(msgspec.Struct, frozen=True, forbid_unknown_fields=True, kw_o
 class CoefSpec(msgspec.Struct, frozen=True, forbid_unknown_fields=True, kw_only=True):
     """The adaptive coefficient of section 19.8: where it starts and how it may move."""
 
-    start: float
+    start: float = 1.0
     max: float = 10.0
     #: A floor that may fall over the run: high while the anchor is protected, then low.
     min: ScheduleSpec = ConstantSpec(0.0)
@@ -135,8 +135,9 @@ class ReferenceKLSpec(
     reference: str
     factor: str = "joint"
     exclude_when: list[RowCondition] = []
-    budget: ScheduleSpec
-    coef: CoefSpec
+    #: The KL the coefficient holds the policy to, in nats per choice row.
+    budget: ScheduleSpec = ConstantSpec(0.1)
+    coef: CoefSpec = CoefSpec()
 
 
 RegulariserSpec = ReferenceKLSpec
