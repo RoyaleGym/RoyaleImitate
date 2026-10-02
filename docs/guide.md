@@ -56,6 +56,39 @@ git clone https://github.com/RoyaleGym/RoyaleImitate.git
 .venv\Scripts\python -m pip install -e RoyaleImitate --no-deps
 ```
 
+## Clone a teacher
+
+A clone is a network trained to copy another player's moves. Record battles a teacher plays in
+your environment, train your learner's network on them, then start a run from the clone:
+
+```python
+from royalegym import TowerHPReward, make_env
+from royaleimitate import clone, record
+from royalelearn import Learner
+
+
+def build_env():
+    return make_env(reward=TowerHPReward())
+
+
+if __name__ == "__main__":
+    learner = Learner(build_env, save_dir="runs/from-clone")
+    demos = record(learner, "push", "runs/demos", battles=200)
+    digest = clone(learner, demos, "runs/clone")
+    learner = Learner(
+        build_env,
+        save_dir="runs/from-clone",
+        extensions={"warm_start": {"init": {"path": "runs/clone", "sha256": digest}}},
+    )
+    learner.learn(total_steps=1_000_000)
+```
+
+The teacher can be a scripted bot by name ("random", "noop", "first_affordable", "defend", "push",
+"patient"), or any policy, such as a bot you saved: `Learner.load_policy("runs/my_bot/bot")`.
+`record` plays it on both seats; `clone` holds out about one battle in twenty to measure the copy,
+stops when that stops improving, and writes a folder with the network and its checks. The clone
+starts out playing like its teacher, so the teacher you pick is where your bot starts.
+
 ## Use
 
 Add the sections to a run's config. For example, to start from a saved policy:
@@ -74,8 +107,7 @@ the start.
 
 From a `royalelearn.Learner`, `royaleimitate.save_actor(learner, folder)` writes one and returns
 its digest; [examples/minimal.py](../examples/minimal.py) does that and starts a second run from
-it. Recording a teacher and cloning it ([docs/spec.md](spec.md) 19.12) is not built yet.
-Any other way to write one is from Python with `royaleimitate.artifacts.write_actor_artifact`, the
+it. Any other way to write one is from Python with `royaleimitate.artifacts.write_actor_artifact`, the
 way `write_from_run` in `tests/imitation_support.py` does: it stores the actor's weights and the
 probe rows the load is checked against. A writer that builds its own `SnapshotSpec` rather than
 taking a run's `snapshot_template` puts `royalelearn.learn.nets.head_meta(net)` in its `meta`, so

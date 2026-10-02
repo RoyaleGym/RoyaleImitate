@@ -16,7 +16,7 @@ from __future__ import annotations
 
 __version__ = "0.1.0"
 
-__all__ = ["save_actor"]
+__all__ = ["clone", "record", "save_actor"]
 
 
 def save_actor(learner: object, folder: object, *, seed: int = 0) -> str:
@@ -28,3 +28,19 @@ def save_actor(learner: object, folder: object, *, seed: int = 0) -> str:
     from .artifacts import save_actor as save
 
     return save(learner, folder, seed=seed)  # type: ignore[arg-type]
+
+
+def record(learner: object, teacher: object, out: object, **kwargs: object) -> object:
+    """A teacher's battles in ``learner``'s environment, as shard rows; see
+    ``royaleimitate.cloning.record``."""
+    from .cloning import record as run
+
+    return run(learner, teacher, out, **kwargs)  # type: ignore[arg-type]
+
+
+def clone(learner: object, demonstrations: object, out: object, **kwargs: object) -> str:
+    """``learner``'s network trained to copy ``demonstrations``, written to ``out``; see
+    ``royaleimitate.cloning.clone``."""
+    from .cloning import clone as run
+
+    return run(learner, demonstrations, out, **kwargs)  # type: ignore[arg-type]

@@ -315,20 +315,25 @@ through the environment is out of scope here.
 
 ### 19.12 Behaviour cloning, the field reference and `demo_bc` (L5)
 
-**Recording** (not built yet): a teacher -- a scripted bot or any saved policy -- plays both seats of
-battles in the run's own environment, and every decision it makes is a shard row, grouped by
+**Recording**, `royaleimitate.record(learner, teacher, out, battles=, seed=)`: a teacher -- a
+scripted bot by name, an `Opponent`, or any policy such as a saved bot -- plays both seats of
+battles in the learner's own environment, and every decision it makes is a shard row, grouped by
 battle.
 
-**Cloning** (not built yet) trains the run's own actor, built by the run's network factory from its
+**Cloning**, `royaleimitate.clone(learner, demonstrations, out, epochs=, batch_size=,
+learning_rate=, weight_decay=, patience=, seed=)`, trains the run's own actor, built by the run's network factory from its
 `net`, so its `arch_digest` is the run's. No critic is trained.
 
 - **Loss**: cross-entropy of the labelled action under the masked distribution
   (`MaskedCategorical`), weighted by each row's weight.
 - **Split**: by group (19.10), so a battle is wholly in training or wholly in validation.
-- **Optimiser**: AdamW with a standard learning-rate schedule, and early stopping on validation
-  NLL.
-- **Output**: an actor artifact (19.2) with validation rows as its probe rows and their
-  log-probabilities, computed by the self-test's own function on the weights as saved.
+- **Optimiser**: AdamW with a cosine learning-rate schedule, and early stopping on validation NLL
+  (the best epoch's weights are kept). Defaults: 20 epochs, batches of 256, learning rate 3e-4,
+  weight decay 0.01, patience 3.
+- **Output**: an actor artifact (19.2) with up to 1,024 validation rows as its probe rows and their
+  log-probabilities, computed by the self-test's own function on the weights as saved. Its
+  `meta["clone"]` records the validation NLL before training and after each epoch. `clone` returns
+  the folder's digest.
 
 **`royaleimitate fit-field-reference --rows <file.npz> --fields a,b,c --out <folder>`** fits the
 `field_mlp` reference: weighted binary cross-entropy of a play label on named field columns, CPU.
