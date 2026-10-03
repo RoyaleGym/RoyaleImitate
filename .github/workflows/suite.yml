@@ -95,6 +95,7 @@ jobs:
           "$VPY" -m pip install -e "RoyaleLearn[torch]"
           "$VPY" -m pip install -e "RoyaleLearn[dev]"
           "$VPY" -m pip install -e RoyaleImitate --no-deps
+          "$VPY" -m pip install pyarrow
 
       - name: refuse to run the suite without the engine
         env:

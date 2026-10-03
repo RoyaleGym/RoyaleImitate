@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "royaleimitate"
-version = "0.2.4"
+version = "0.2.5"
 description = "RoyaleImitate: imitation learning for RoyaleLearn, as an optional add-on"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -23,9 +23,15 @@ torch = [
     "torch>=2.4",
     "safetensors>=0.4",
 ]
+# Human games from the IL_Replay dataset (``royaleimitate.from_replays``).
+replays = [
+    "huggingface_hub>=0.24",
+    "pyarrow>=15",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.16",
+    "pyarrow>=15",
 ]
 
 # How RoyaleLearn finds the two config sections this package provides. The entry point's name is
@@ -40,6 +46,9 @@ royaleimitate = "royaleimitate.cli:main"
 # Naming the package explicitly keeps anything else in this folder out of a wheel built here.
 [tool.setuptools.packages.find]
 include = ["royaleimitate", "royaleimitate.*"]
+
+[tool.setuptools.package-data]
+royaleimitate = ["replay_cards.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

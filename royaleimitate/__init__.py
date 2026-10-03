@@ -10,13 +10,14 @@ Two config sections, found by RoyaleLearn through this package's entry points:
 And the tools that make what they read: saved-policy folders (``artifacts``), field models
 (``field_model``, ``fit``), and demonstration shards (``shards``, ``split``). And ``public_log``:
 the observation's fair fields from a timed log of card plays, with no engine running.
+And ``from_replays``: human games from the public IL_Replay dataset, as demonstration shards.
 """
 
 from __future__ import annotations
 
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 
-__all__ = ["clone", "record", "save_actor"]
+__all__ = ["clone", "from_replays", "record", "save_actor"]
 
 
 def save_actor(learner: object, folder: object, *, seed: int = 0) -> str:
@@ -44,3 +45,11 @@ def clone(learner: object, demonstrations: object, out: object, **kwargs: object
     from .cloning import clone as run
 
     return run(learner, demonstrations, out, **kwargs)  # type: ignore[arg-type]
+
+
+def from_replays(learner: object, out: object, **kwargs: object) -> object:
+    """Human games from the IL_Replay dataset, replayed in ``learner``'s environment, as shard
+    rows; see ``royaleimitate.replays.from_replays``."""
+    from .replays import from_replays as run
+
+    return run(learner, out, **kwargs)  # type: ignore[arg-type]

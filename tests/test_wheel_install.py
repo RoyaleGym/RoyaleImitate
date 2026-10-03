@@ -81,3 +81,13 @@ def test_a_wheel_installed_package_is_named_in_a_runs_identity(wheel_site: Path)
     import royaleimitate
 
     assert lines["VERSION"] == royaleimitate.__version__
+
+
+def test_a_wheel_carries_the_replay_card_map(wheel_site: Path) -> None:
+    """``from_replays`` reads its card map from a file beside the module; a wheel without the
+    file fails on import."""
+    import json
+
+    shipped = wheel_site / "royaleimitate" / "replay_cards.json"
+    assert shipped.is_file()
+    assert json.loads(shipped.read_text(encoding="utf-8"))["the-log"] == "Log"

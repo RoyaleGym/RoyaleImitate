@@ -89,6 +89,35 @@ The teacher can be a scripted bot by name ("random", "noop", "first_affordable",
 stops when that stops improving, and writes a folder with the network and its checks. The clone
 starts out playing like its teacher, so the teacher you pick is where your bot starts.
 
+## Clone human players
+
+Human games work the same way. `from_replays` downloads IL_Replay, a public set of ladder games
+([VanguardX101/IL_Replay](https://huggingface.co/datasets/VanguardX101/IL_Replay) on Hugging Face;
+its page describes the data), and replays them in your environment:
+
+    pip install "royaleimitate[replays]"
+
+```python
+from royalegym import TowerHPReward, make_env
+from royaleimitate import clone, from_replays
+from royalelearn import Learner
+
+
+def build_env():
+    return make_env(reward=TowerHPReward())
+
+
+if __name__ == "__main__":
+    learner = Learner(build_env, save_dir="runs/from-humans")
+    demos = from_replays(learner, "runs/human-demos", matches=1000)
+    digest = clone(learner, demos, "runs/human-clone")
+```
+
+Each match is replayed with both players' card plays, and every decision of both seats becomes
+a row labelled with what the player did there: a card on a tile, or nothing. A match is skipped
+when your catalogue lacks one of its cards, or when the engine refuses one of its plays, and the
+counts are printed. The data downloads into the Hugging Face cache, about 5,000 matches a file.
+
 ## Use
 
 Add the sections to a run's config. For example, to start from a saved policy:
