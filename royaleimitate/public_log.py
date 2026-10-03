@@ -15,7 +15,11 @@ read with ``fair_fields`` (the function ``build_vector`` gets them from), on
 the inputs come from: plays from a log, and the own hand from the dealt deck order.
 
 WHAT IT CANNOT FILL. The board: tower hitpoints, crowns and which kings are awake
-(``BOARD_FIELDS``). A log of plays does not say what the plays did.
+(``BOARD_FIELDS``). A log of plays does not say what the plays did. Nor the card status
+fields (``SpatialObsBuilder(card_status=True)``, ``CARD_STATUS_FIELDS``): evolution
+progress, hero and ability buttons, and the forms the enemy has shown come from the
+engine's state and the units on the board, not from which card was played when.
+``observe`` returns only ``fields()``, which holds none of them.
 
 ABILITY PRESSES. A press of an ability button (a champion's, a hero's) plays no card and
 is paid from the bar: 1 elixir for a Golden Knight's, 3 for a hero Musketeer's, 2 for a hero
