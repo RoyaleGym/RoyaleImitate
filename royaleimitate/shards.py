@@ -82,6 +82,9 @@ class ShardContext(msgspec.Struct, frozen=True, kw_only=True):
     card_id_planes: int
     #: The environment's whole ``config()``, without its truncation: a record, not a key.
     env_config: dict[str, Any]
+    #: The spells' id planes (``spell_identity``), stored beside ``card_ids``; 0 without them,
+    #: which is every shard written before they existed.
+    spell_id_planes: int = 0
 
     @property
     def engine_key(self) -> str:
@@ -112,6 +115,7 @@ class ShardContext(msgspec.Struct, frozen=True, kw_only=True):
         build = engine_build(env_config, cards)
         engine = env_config.get("engine") or {}
         card_ids = spec.obs_space.get("card_ids")
+        spell_ids = spec.obs_space.get("spell_ids")
         return cls(
             obs_digest=spec.obs_digest,
             action_digest=action_digest,
@@ -128,6 +132,7 @@ class ShardContext(msgspec.Struct, frozen=True, kw_only=True):
             n_actions=int(spec.n_actions),
             card_id_planes=int(card_ids.shape[0]) if card_ids is not None else 0,
             env_config={k: v for k, v in env_config.items() if k != "truncation_cond"},
+            spell_id_planes=int(spell_ids.shape[0]) if spell_ids is not None else 0,
         )
 
     @classmethod
@@ -269,6 +274,11 @@ class ShardWriter:
             if ids.min() < 0 or ids.max() > 255:
                 raise ValueError("a card id does not fit a byte")
             pending.setdefault("card_ids", []).append(ids.astype(np.uint8))
+        if ctx.spell_id_planes:
+            spells = np.asarray(obs["spell_ids"])
+            if spells.min() < 0 or spells.max() > 255:
+                raise ValueError("a spell id does not fit a byte")
+            pending.setdefault("spell_ids", []).append(spells.astype(np.uint8))
         unknown = int(flags) & ~sum(self._flags)
         if unknown:
             raise ValueError(f"flag bits {unknown:#x} are not named in flag_names")
@@ -372,6 +382,7 @@ _MUST_MATCH = (
     "vector_size",
     "n_actions",
     "card_id_planes",
+    "spell_id_planes",
 )
 
 
@@ -470,6 +481,8 @@ class ShardReader:
             obs = {"spatial": spatial[row], "vector": vector[row], "action_mask": mask[row]}
             if ctx.card_id_planes:
                 obs["card_ids"] = columns["card_ids"][row]
+            if ctx.spell_id_planes:
+                obs["spell_ids"] = columns["spell_ids"][row]
             out.append(obs)
         return out
 

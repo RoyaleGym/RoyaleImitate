@@ -208,3 +208,47 @@ def test_a_row_the_writer_cannot_vouch_for_is_refused(run_side: Any, tmp_path: P
             writer.add(obs, action=0, weight=1.0, group=0, seat=0, tick=90, flags=1 << 9)
     with pytest.raises(PreflightError, match="from 1 << 8 up"):
         ShardWriter(tmp_path / "other", context, flag_names={4: "tier_o"})
+
+
+def test_spell_ids_are_stored_beside_the_card_ids_and_pack_as_the_run_packs_them(
+    tmp_path: Path,
+) -> None:
+    """With ``spell_identity`` on, its planes are a column of their own, read back exactly, and
+    the reading run's codec packs them into its id region. Plant: drop the column and the packed
+    rows stop matching."""
+    from royalelearn.rollout.envspec import ComponentSpec
+
+    config = tiny_config(tmp_path / "run")
+    builder = config.env.obs_builder
+    switches = {"card_identity": True, "spell_identity": True, "spell_aim_after_ticks": 20}
+    env = msgspec.structs.replace(
+        config.env, obs_builder=ComponentSpec(builder.cls, {**builder.kwargs, **switches})
+    )
+    config = msgspec.structs.replace(config, env=env)
+    context = ShardContext.of_config(config)
+    assert context.spell_id_planes == 4 and context.card_id_planes == 2
+    vec = config.env.build_vec(1)
+    observations: list[dict[str, np.ndarray]] = []
+    try:
+        batch = vec.reset(seed=3)[0]
+        for index in range(20):
+            obs = {key: np.array(value[0]) for key, value in batch.items()}
+            # Spells in flight are rare on a short mock battle, so every id is put on a plane.
+            obs["spell_ids"] = np.full_like(obs["spell_ids"], index % 7)
+            observations.append(obs)
+            batch = vec.step(np.zeros(vec.num_envs, dtype=np.int64))[0]
+    finally:
+        vec.close()
+    directory = _write(tmp_path / "shards", context, observations)
+    reader = ShardReader(directory, context)
+    back = reader.observations(reader.part(0))
+    assert all(
+        np.array_equal(row["spell_ids"], obs["spell_ids"])
+        for row, obs in zip(back, observations, strict=False)
+    )
+    with coordinator(config) as run:
+        codec = run.row_codec()
+        packed = np.concatenate(
+            [reader.packed(i, codec)[0] for i in range(len(reader.manifest.parts))]
+        )
+        assert np.array_equal(packed, codec.pack(observations))
