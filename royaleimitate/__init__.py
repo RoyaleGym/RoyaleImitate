@@ -14,7 +14,7 @@ the observation's fair fields from a timed log of card plays, with no engine run
 
 from __future__ import annotations
 
-__version__ = "0.2.3"
+__version__ = "0.2.4"
 
 __all__ = ["clone", "record", "save_actor"]
 

@@ -72,7 +72,7 @@ def test_record_stores_every_decision_the_teacher_made(recorded: Any) -> None:
 
 def test_a_teacher_is_a_policy_an_opponent_or_a_scripted_name(tmp_path: Path) -> None:
     learner = Learner(build_env, n_envs=2, save_dir=tmp_path / "s", **TINY)
-    for teacher in ("random", "push"):
+    for teacher in ("random", "push", "first-affordable", "first_affordable"):
         assert record(learner, teacher, tmp_path / teacher, battles=2).is_dir()
     with pytest.raises(PreflightError, match="teacher"):
         record(learner, "nobody", tmp_path / "x", battles=1)

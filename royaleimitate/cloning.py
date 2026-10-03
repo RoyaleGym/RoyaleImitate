@@ -39,7 +39,9 @@ def _teacher(teacher: Any) -> Any:
     if isinstance(teacher, str):
         from royalelearn.extensions import build_opponent
 
-        name = "random_legal" if teacher == "random" else teacher
+        # "first-affordable" and "first_affordable" are one bot, as RoyaleGym's names read.
+        name = teacher.replace("-", "_")
+        name = "random_legal" if name == "random" else name
         if name in ("noop", "random_legal", *_SCRIPTED):
             return build_opponent(name)
         raise PreflightError(
@@ -72,7 +74,8 @@ def record(
 
     ``teacher`` is a policy (a function from one seat's observation to an action, as
     ``Learner.load_policy`` returns), a ``royalegym`` ``Opponent``, or one of the scripted bots by
-    name: "random", "noop", "first_affordable", "defend", "push" or "patient".
+    name: "random", "noop", "first_affordable", "defend", "push" or "patient" (a hyphen
+    reads as an underscore).
     """
     player = _teacher(teacher)
     config = learner.config
