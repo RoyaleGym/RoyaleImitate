@@ -8,9 +8,9 @@ version = "0.2.6"
 description = "RoyaleImitate: imitation learning for RoyaleLearn, as an optional add-on"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-# Neither is on PyPI: both are sibling checkouts, installed editable before this package
-# (RoyaleSim -> RoyaleGym -> RoyaleViser -> RoyaleLearn -> RoyaleImitate). pip resolves them from
-# the venv; it never fetches them.
+# Both come from PyPI, or, when working on the code, from sibling checkouts installed editable
+# first (RoyaleSim -> RoyaleGym -> RoyaleViser -> RoyaleLearn -> RoyaleImitate), which pip then
+# takes as already installed.
 dependencies = [
     "royalelearn>=0.5.4",
     "royalegym>=0.1.0",

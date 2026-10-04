@@ -9,7 +9,7 @@ It is an optional add-on to RoyaleLearn, the trainer: leave it out and nothing c
 
     pip install "royalegym[all]"
 
-This is the `[imitate]` part. Until it is on PyPI, see [Install](https://royalegym.github.io/RoyaleGym/install/) for the exact line.
+This is the `[imitate]` part. On Windows with an NVIDIA card, install PyTorch first: [Install](https://royalegym.github.io/RoyaleGym/install/), step 4.
 
 ## Try it
 
