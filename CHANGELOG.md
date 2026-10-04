@@ -1,0 +1,36 @@
+# Changelog
+
+## 0.2.6
+
+- Demonstration rows store RoyaleGym's `spell_ids` observation beside `card_ids`. Needs
+  royalelearn 0.5.4.
+
+## 0.2.5
+
+- `from_replays(learner, out)` turns human games from the public IL_Replay dataset into rows
+  that `clone` reads. Install with `pip install "royaleimitate[replays]"`.
+
+## 0.2.4
+
+- `record` takes a scripted teacher's name with hyphens or underscores.
+
+## 0.2.3
+
+- Works when installed from a wheel. Needs royalelearn 0.5.2.
+
+## 0.2.2
+
+- `PublicLogMemory` follows the hand refill timer: a played slot stays empty until it refills.
+
+## 0.2.1
+
+- A clone and a saved actor load as bots with `Learner.load_policy`.
+
+## 0.2.0
+
+- `record` plays a teacher in your environment and stores its decisions; `clone` trains a
+  network to copy them. Needs royalelearn 0.5.0.
+
+## 0.1.0
+
+- `save_actor`, the `warm_start` and `imitation` sections, and a minimal example.
