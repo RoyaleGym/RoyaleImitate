@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Demonstration rows store RoyaleGym's `unit_ids` observation as a column of its own, and a
+  reading run with another unit-plane count is refused.
+
 ## 0.2.8
 
 - `from_replays(..., keep=...)` uses only the matches a function you pass accepts, given each

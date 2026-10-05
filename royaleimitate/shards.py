@@ -85,6 +85,9 @@ class ShardContext(msgspec.Struct, frozen=True, kw_only=True):
     #: The spells' id planes (``spell_identity``), stored beside ``card_ids``; 0 without them,
     #: which is every shard written before they existed.
     spell_id_planes: int = 0
+    #: The unit-type planes (``unit_identity``), stored as a column of their own; 0 without them.
+    #: Their vocabulary is the engine's unit list, which the observation digest covers.
+    unit_id_planes: int = 0
 
     @property
     def engine_key(self) -> str:
@@ -116,6 +119,7 @@ class ShardContext(msgspec.Struct, frozen=True, kw_only=True):
         engine = env_config.get("engine") or {}
         card_ids = spec.obs_space.get("card_ids")
         spell_ids = spec.obs_space.get("spell_ids")
+        unit_ids = spec.obs_space.get("unit_ids")
         return cls(
             obs_digest=spec.obs_digest,
             action_digest=action_digest,
@@ -133,6 +137,7 @@ class ShardContext(msgspec.Struct, frozen=True, kw_only=True):
             card_id_planes=int(card_ids.shape[0]) if card_ids is not None else 0,
             env_config={k: v for k, v in env_config.items() if k != "truncation_cond"},
             spell_id_planes=int(spell_ids.shape[0]) if spell_ids is not None else 0,
+            unit_id_planes=int(unit_ids.shape[0]) if unit_ids is not None else 0,
         )
 
     @classmethod
@@ -279,6 +284,13 @@ class ShardWriter:
             if spells.min() < 0 or spells.max() > 255:
                 raise ValueError("a spell id does not fit a byte")
             pending.setdefault("spell_ids", []).append(spells.astype(np.uint8))
+        if ctx.unit_id_planes:
+            units = np.asarray(obs["unit_ids"])
+            # One byte, or two once the engine's unit list passes 255 types (the space says).
+            wide = units.dtype.itemsize > 1
+            if units.min() < 0 or units.max() > (65535 if wide else 255):
+                raise ValueError("a unit type does not fit its column")
+            pending.setdefault("unit_ids", []).append(units.astype(np.uint16 if wide else np.uint8))
         unknown = int(flags) & ~sum(self._flags)
         if unknown:
             raise ValueError(f"flag bits {unknown:#x} are not named in flag_names")
@@ -383,6 +395,7 @@ _MUST_MATCH = (
     "n_actions",
     "card_id_planes",
     "spell_id_planes",
+    "unit_id_planes",
 )
 
 
@@ -483,6 +496,8 @@ class ShardReader:
                 obs["card_ids"] = columns["card_ids"][row]
             if ctx.spell_id_planes:
                 obs["spell_ids"] = columns["spell_ids"][row]
+            if ctx.unit_id_planes:
+                obs["unit_ids"] = columns["unit_ids"][row]
             out.append(obs)
         return out
 

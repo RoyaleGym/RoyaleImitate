@@ -252,3 +252,78 @@ def test_spell_ids_are_stored_beside_the_card_ids_and_pack_as_the_run_packs_them
             [reader.packed(i, codec)[0] for i in range(len(reader.manifest.parts))]
         )
         assert np.array_equal(packed, codec.pack(observations))
+
+
+class UnitTypedMock:
+    """Built lazily: a MockEngine that says each entity's own unit type (royalesim 0.1.17 on)."""
+
+    UNITS = ("Archer", "Giant", "Goblin", "KingTower", "Knight", "PrincessTower")
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+        from royalegym.mock_engine import MockEngine
+        from royalegym.protocol import EntityKind
+
+        units = cls.UNITS
+
+        class _Typed(MockEngine):
+            def unit_types(self) -> list[str]:
+                return list(units)
+
+            def state(self) -> Any:
+                s = super().state()
+
+                def typed(e: Any) -> Any:
+                    if e.kind == EntityKind.KING_TOWER:
+                        name = "KingTower"
+                    elif e.kind == EntityKind.PRINCESS_TOWER:
+                        name = "PrincessTower"
+                    else:
+                        name = units[e.card_id % 3]
+                    return msgspec.structs.replace(e, unit_type=units.index(name))
+
+                return msgspec.structs.replace(s, entities=[typed(e) for e in s.entities])
+
+        return _Typed(*args, **kwargs)
+
+
+def test_unit_ids_are_stored_as_their_own_column_and_pack_as_the_run_packs_them(
+    tmp_path: Path,
+) -> None:
+    """Plant: drop the column on read and the packed rows stop matching."""
+    from royalelearn.rollout.envspec import ComponentSpec
+
+    config = tiny_config(tmp_path / "run")
+    builder = config.env.obs_builder
+    switches = {"card_identity": True, "unit_identity": True}
+    env = msgspec.structs.replace(
+        config.env,
+        engine=ComponentSpec("test_shards.UnitTypedMock", {}),
+        obs_builder=ComponentSpec(builder.cls, {**builder.kwargs, **switches}),
+    )
+    config = msgspec.structs.replace(config, env=env, extra_component_modules=["test_shards."])
+    context = ShardContext.of_config(config)
+    assert context.unit_id_planes == 2
+    vec = config.env.build_vec(1, ("test_shards.",))
+    observations: list[dict[str, np.ndarray]] = []
+    try:
+        batch = vec.reset(seed=3)[0]
+        for index in range(20):
+            obs = {key: np.array(value[0]) for key, value in batch.items()}
+            obs["unit_ids"] = np.full_like(obs["unit_ids"], index % 6)
+            observations.append(obs)
+            batch = vec.step(np.zeros(vec.num_envs, dtype=np.int64))[0]
+    finally:
+        vec.close()
+    directory = _write(tmp_path / "shards", context, observations)
+    reader = ShardReader(directory, context)
+    back = reader.observations(reader.part(0))
+    assert all(
+        np.array_equal(row["unit_ids"], obs["unit_ids"])
+        for row, obs in zip(back, observations, strict=False)
+    )
+    with coordinator(config) as run:
+        codec = run.row_codec()
+        packed = np.concatenate(
+            [reader.packed(i, codec)[0] for i in range(len(reader.manifest.parts))]
+        )
+        assert np.array_equal(packed, codec.pack(observations))
