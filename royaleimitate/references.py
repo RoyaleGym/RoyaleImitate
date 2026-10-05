@@ -15,6 +15,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
+import msgspec
+
 from royalelearn.extensions import PreflightError, field_slice
 
 from .artifacts import (
@@ -171,7 +173,9 @@ def build_references(
             loaded = SnapshotReference(name, actor)
             said = "no probe rows"
             if artifact.probe is not None:
-                worst = self_test(loaded.actor, codec, artifact.probe, atol=1e-5, what=what)
+                stated = reference.self_test_atol
+                atol = 1e-5 if stated is msgspec.UNSET else stated
+                worst = self_test(loaded.actor, codec, artifact.probe, atol=atol, what=what)
                 said = f"probe self-test {worst:.3g}"
             out[name] = loaded
         elif isinstance(reference, FieldMLPReferenceSpec):

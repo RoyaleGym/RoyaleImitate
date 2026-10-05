@@ -150,8 +150,10 @@ A reference is evaluated on the rows the actor is trained on, under `no_grad`, w
 autocast, and never trained.
 
 - **`snapshot`**: an actor artifact (19.2), loaded into a second copy of the run's actor and checked
-  as an init is (steps 2-4 of 19.4), plus the self-test at 1e-5 when the artifact carries probe
-  rows. Its distribution is a `MaskedCategorical` over the row's own mask, so it is a full policy
+  as an init is (steps 2-4 of 19.4), plus the self-test when the artifact carries probe rows: at
+  1e-5, or at the reference's `self_test_atol` when it states one, as a run whose kernels differ
+  from the recording's needs to (`determinism.tier` throughput picks its convolutions by timing).
+  Its distribution is a `MaskedCategorical` over the row's own mask, so it is a full policy
   over the legal set.
 - **`field_mlp`**: a small MLP over named fields of the observation vector, giving the logit of
   p(play) on a row. Its `spec.json` lists each field's name and width, the normalisation, the

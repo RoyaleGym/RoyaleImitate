@@ -80,6 +80,11 @@ class SnapshotReferenceSpec(
 
     path: str
     sha256: str
+    #: How far the reference's log-probabilities on the artifact's probe rows may be from the ones
+    #: recorded when it was written, as ``warm_start.init.self_test_atol`` is for the init. Unset
+    #: means 1e-5 and keeps a run's identity as it was. A run whose kernels differ from the
+    #: recording's (``determinism.tier`` throughput picks its convolutions by timing) states it.
+    self_test_atol: float | msgspec.UnsetType = msgspec.UNSET
 
 
 class FieldMLPReferenceSpec(
@@ -195,6 +200,9 @@ def imitation_problems(section: ImitationSection) -> list[str]:
             problems.append(f"{where}.references: {name!r} is not a usable name")
         if not reference.path or not reference.sha256:
             problems.append(f"{where}.references.{name} needs both a path and a sha256")
+        atol = getattr(reference, "self_test_atol", msgspec.UNSET)
+        if atol is not msgspec.UNSET and not atol >= 0.0:
+            problems.append(f"{where}.references.{name}.self_test_atol must be at least 0")
     seen: set[str] = set()
     for index, reg in enumerate(section.regularisers):
         label = f"{where}.regularisers[{index}] ({reg.name!r})"
