@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.7
 
 - `imitation.references.<name>.self_test_atol` sets a snapshot reference's probe self-test
   tolerance, as `warm_start.init.self_test_atol` does for the init. Unset, it stays 1e-5 and the
