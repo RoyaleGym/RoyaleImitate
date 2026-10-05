@@ -23,6 +23,8 @@ How a match is replayed:
   Under a command delay with the action parser's ``hold_while_pending``, a seat with a play
   waiting is offered only the no-op, so a second play made before the first lands is refused
   and its match skipped. ``make_env`` has neither by default.
+- ``keep``, a function you may pass, picks the matches to use, by their decks for example; the
+  ones it turns down are skipped too.
 
 The skips are counted, printed, and kept in the shard manifest's ``producer`` entry.
 """
@@ -254,7 +256,8 @@ def from_replays(
     data_dir: str | Path | None = None,
     cache_dir: str | Path | None = None,
     revision: str | None = None,
-    printer: Callable[[str], None] = print,
+    keep: Callable[[MatchPlan], bool] | None = None,
+    printer: Callable[[str], None] | None = print,
 ) -> Path:
     """Replay ``matches`` human games of IL_Replay in ``learner``'s environment and store both
     seats' decisions as shard rows. Returns the shard directory (under ``out``) to give ``clone``.
@@ -263,9 +266,19 @@ def from_replays(
     folder) as they are needed: one part holds about 5,000 matches. ``data_dir`` reads a copy
     you already have instead (a folder holding ``replays/*.parquet``). ``matches`` counts the
     matches written; skipped ones do not count, and the dataset is read in its own order.
+
+    ``keep``, when given, decides which matches are used: it is called with each match whose
+    cards the catalogue holds (a ``MatchPlan``: its ``decks``, the two players' card names, and
+    its ``plays``), and a match it returns False for is skipped and counted as "not kept". For
+    example, the matches where either player used your deck::
+
+        mine = {"HogRider", "Musketeer", ...}  # your eight cards
+        keep = lambda match: any(set(deck) == mine for deck in match.decks)
     """
     payloads, source = _payloads(data_dir, cache_dir, revision)
-    return write_matches(learner, out, payloads, matches=matches, source=source, printer=printer)
+    return write_matches(
+        learner, out, payloads, matches=matches, source=source, keep=keep, printer=printer
+    )
 
 
 def write_matches(
@@ -275,9 +288,11 @@ def write_matches(
     *,
     matches: int = 1000,
     source: str = "",
-    printer: Callable[[str], None] = print,
+    keep: Callable[[MatchPlan], bool] | None = None,
+    printer: Callable[[str], None] | None = print,
 ) -> Path:
     """``from_replays`` on matches you supply: each one an IL_Replay ``payload_json``, parsed."""
+    say = printer or (lambda _line: None)
     env = learner.build_env()
     battle = _battle_env(env)
     catalogue = frozenset(card.name for card in battle.engine.cards())
@@ -293,6 +308,9 @@ def write_matches(
                 plan = match_plan(payload, catalogue)
                 if isinstance(plan, str):
                     skipped[plan] += 1
+                    continue
+                if keep is not None and not keep(plan):
+                    skipped["not kept"] += 1
                     continue
                 replayed = _replay(env, battle, plan, seed=index)
                 if isinstance(replayed, str):
@@ -311,7 +329,7 @@ def write_matches(
                 written += 1
                 rows += len(replayed)
                 if written % 100 == 0:
-                    printer(f"{written} matches written, {sum(skipped.values())} skipped")
+                    say(f"{written} matches written, {sum(skipped.values())} skipped")
             writer.manifest.producer.update(
                 {"matches": written, "rows": rows, "skipped": dict(sorted(skipped.items()))}
             )
@@ -320,5 +338,5 @@ def write_matches(
         if close is not None:
             close()
     reasons = ", ".join(f"{count} {why}" for why, count in skipped.most_common()) or "none"
-    printer(f"{written} matches written ({rows} rows); skipped: {reasons}")
+    say(f"{written} matches written ({rows} rows); skipped: {reasons}")
     return Path(out) / context.engine_key

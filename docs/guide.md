@@ -118,6 +118,15 @@ a row labelled with what the player did there: a card on a tile, or nothing. A m
 when your catalogue lacks one of its cards, or when the engine refuses one of its plays, and the
 counts are printed. The data downloads into the Hugging Face cache, about 5,000 matches a file.
 
+To clone only some matches, pass `keep`: a function that takes a match and returns True to use
+it. A match's `decks` are the two players' card names, so this keeps the matches where either
+player used your deck:
+
+```python
+mine = {"HogRider", "Musketeer", "Cannon", "IceGolemite", "IceSpirits", "Skeletons", "Fireball", "Log"}
+demos = from_replays(learner, "runs/my-deck-demos", keep=lambda m: mine in map(set, m.decks))
+```
+
 ## Use
 
 Add the sections to a run's config. For example, to start from a saved policy:

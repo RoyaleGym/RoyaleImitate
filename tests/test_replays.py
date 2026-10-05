@@ -165,3 +165,33 @@ def test_the_dataset_files_are_read_as_published(learner: Any, tmp_path: Path) -
     manifest = json.loads((directory / "manifest.json").read_text())
     assert manifest["producer"]["matches"] == 1 and manifest["producer"]["rows"] == 80
     assert lines[-1].startswith("1 matches written (80 rows)")
+
+
+@needs_engine
+def test_keep_clones_only_the_matches_it_accepts_and_counts_the_rest_skipped(
+    learner: Any, tmp_path: Path
+) -> None:
+    """A filter and nothing else: the kept match's rows are the same as without ``keep``, and a
+    match it turns down is skipped and counted like any other."""
+    zap_deck = [key if key != "skeletons" else "zap" for key in DECK]
+    mine = set(NAMES)
+
+    def keep(match: Any) -> bool:
+        return any(set(deck) == mine for deck in match.decks)
+
+    lines: list[str] = []
+    directory = write_matches(
+        learner,
+        tmp_path / "kept",
+        [payload("a1", MATCH), payload("b2", MATCH, deck=zap_deck)],
+        keep=keep,
+        printer=lines.append,
+    )
+    manifest = json.loads((directory / "manifest.json").read_text())
+    assert manifest["producer"]["matches"] == 1
+    assert manifest["producer"]["skipped"] == {"not kept": 1}
+    alone = write_matches(learner, tmp_path / "alone", [payload("a1", MATCH)], printer=None)
+    kept_rows = ShardReader(directory, ShardContext.of_config(learner.config)).part(0)
+    alone_rows = ShardReader(alone, ShardContext.of_config(learner.config)).part(0)
+    assert np.array_equal(kept_rows["action"], alone_rows["action"])
+    assert np.array_equal(kept_rows["spatial"], alone_rows["spatial"])

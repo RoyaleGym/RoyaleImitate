@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.8
+
+- `from_replays(..., keep=...)` uses only the matches a function you pass accepts, given each
+  match's decks and plays; the others are skipped and counted as "not kept".
+
 ## 0.2.7
 
 - `imitation.references.<name>.self_test_atol` sets a snapshot reference's probe self-test
