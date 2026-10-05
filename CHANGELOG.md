@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.9
 
 - Demonstration rows store RoyaleGym's `unit_ids` observation as a column of its own, and a
   reading run with another unit-plane count is refused.
