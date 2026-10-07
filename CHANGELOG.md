@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `clone` and `save_actor` write `environment.json` beside the bot, what the learner's
+  `build_env` built, so that `Learner.load_env(folder)` rebuilds the environment it plays in from
+  the folder alone. Needs royalelearn 0.5.12.
+
 ## 0.2.9
 
 - Demonstration rows store RoyaleGym's `unit_ids` observation as a column of its own, and a

@@ -96,6 +96,18 @@ def test_clone_copies_the_teacher_and_a_student_starts_from_it(
     obs, _ = env.reset(seed=5)
     assert bool(np.asarray(obs["blue"]["action_mask"])[bot(obs["blue"])])
 
+    # A clone that never learned has its environment beside it too, and it rebuilds from the
+    # folder alone: no build_env, no script run.
+    import msgspec
+
+    rebuilt = Learner.load_env(out)
+    try:
+        assert msgspec.json.decode(msgspec.json.encode(rebuilt.config())) == learner.environment
+        obs, _ = rebuilt.reset(seed=5)
+        assert bool(np.asarray(obs["blue"]["action_mask"])[bot(obs["blue"])])
+    finally:
+        rebuilt.close()
+
     student = Learner(
         build_env,
         n_envs=2,

@@ -21,7 +21,7 @@ from typing import Any
 
 import numpy as np
 
-from royalelearn.extensions import PreflightError, write_policy_record
+from royalelearn.extensions import PreflightError, write_environment_record, write_policy_record
 
 from .artifacts import ProbeSet, artifact_digest, probe_log_probs, write_actor_artifact
 from .shards import ShardContext, ShardReader, ShardWriter
@@ -221,6 +221,8 @@ def clone(
                 spec,
                 probe=ProbeSet(rows=probe_rows, log_probs=log_probs),
             )
-            # So that ``Learner.load_policy(out)`` plays the clone, as well as a warm start.
+            # So that ``Learner.load_policy(out)`` plays the clone, as well as a warm start, and
+            # ``Learner.load_env(out)`` rebuilds the environment it plays in.
             write_policy_record(out, run.spec, config.net)
+            write_environment_record(out, learner.environment)
     return artifact_digest(out)

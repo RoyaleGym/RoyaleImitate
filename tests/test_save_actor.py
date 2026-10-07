@@ -58,6 +58,13 @@ def test_a_learner_saved_as_an_actor_starts_a_student_that_plays_the_same(
     obs, _ = env.reset(seed=5)
     saved_bot = Learner.load_policy(folder, greedy=True)
     assert 0 <= saved_bot(obs["blue"]) < len(obs["blue"]["action_mask"])
+    rebuilt = Learner.load_env(folder)
+    try:
+        assert (folder / "environment.json").is_file()
+        obs, _ = rebuilt.reset(seed=5)
+        assert 0 <= saved_bot(obs["blue"]) < len(obs["blue"]["action_mask"])
+    finally:
+        rebuilt.close()
 
     init = {"path": str(folder), "sha256": digest}
     student = Learner(
