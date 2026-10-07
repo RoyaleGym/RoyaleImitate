@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.10
 
 - `clone` and `save_actor` write `environment.json` beside the bot, what the learner's
   `build_env` built, so that `Learner.load_env(folder)` rebuilds the environment it plays in from
