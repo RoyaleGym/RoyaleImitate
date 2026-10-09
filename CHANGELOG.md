@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `ShardReader` keeps each part's packed rows after their first read, so a second epoch reads
+  no part file again: `cache="auto"` (the default) keeps them in memory while every split's
+  packed rows fit `cache_memory_mb` (2 GB), else as uncompressed `.npy` files in the shard's
+  `packed` folder while the disk has room, which a later run on the same rows and codec reads
+  too, else not at all. `"memory"`, `"disk"` and None choose. The rows and their order are
+  the same whichever it is. `clone(cache=...)` passes it on and says which in its second line.
+
 ## 0.2.12
 
 - `python -m royaleimitate.stamp FOLDER` (`royaleimitate.stamp.stamp_actor_digest`) adds

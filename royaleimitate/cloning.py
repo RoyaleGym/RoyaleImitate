@@ -124,6 +124,7 @@ def clone(
     patience: int = 3,
     seed: int = 0,
     printer: Callable[[str], None] | None = print,
+    cache: str | None = "auto",
 ) -> str:
     """Train ``learner``'s network to copy the actions in ``demonstrations`` (a directory
     ``record`` returned) and write it to the folder ``out``. Returns the folder's digest, the
@@ -136,6 +137,10 @@ def clone(
     ``printer`` gets a line first (how many rows, on what device, how many epochs at most), then
     one after each epoch: its validation NLL, how long it took, and at most how much longer the
     rest could take at that pace. None prints nothing.
+
+    ``cache`` is where the demonstrations' packed rows are kept after the first epoch reads
+    them (``ShardReader``): "auto" in memory if they fit, else on disk if there is room;
+    "memory", "disk", or None to read them again every epoch. The second line says which.
     """
     import torch
 
@@ -143,7 +148,7 @@ def clone(
 
     say = printer or (lambda _line: None)
     config = learner.config
-    reader = ShardReader(demonstrations, ShardContext.of_config(config))
+    reader = ShardReader(demonstrations, ShardContext.of_config(config), cache=cache)
     if not reader.manifest.validation_rows:
         raise PreflightError(
             f"{demonstrations} has no row in the validation split, which holds out about one "
@@ -172,6 +177,7 @@ def clone(
                 f"against) on {run.device}{threads}: up to {epochs} epochs, stopping once "
                 f"{patience} in a row do not improve"
             )
+            say(reader.plan_cache(codec).said)
 
             def nll(split: str, epoch: int, *, train: bool) -> float:
                 total, weight = 0.0, 0.0

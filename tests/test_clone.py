@@ -129,6 +129,7 @@ def test_clone_says_what_it_is_doing_and_how_long_it_may_take(
     lines: list[str] = []
     clone(learner, directory, tmp_path / "said", epochs=4, batch_size=64, printer=lines.append)
     assert "rows" in lines[0] and "up to 4 epochs" in lines[0] and "cpu" in lines[0]
+    assert lines[1].startswith("keeping the packed rows in memory")
     epochs = [line for line in lines if line.startswith("epoch ")]
     assert epochs, lines
     for index, line in enumerate(epochs, start=1):

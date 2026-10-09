@@ -16,6 +16,8 @@ another engine are another dataset, and the reader refuses them unless told why 
 from __future__ import annotations
 
 import hashlib
+import os
+import shutil
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -37,6 +39,7 @@ __all__ = [
     "FLAG_PROJECTED",
     "MANIFEST_NAME",
     "SHARD_FORMAT_VERSION",
+    "CachePlan",
     "PartInfo",
     "ShardBatch",
     "ShardContext",
@@ -47,6 +50,12 @@ __all__ = [
 
 SHARD_FORMAT_VERSION = 1
 MANIFEST_NAME = "manifest.json"
+#: The folder inside a shard directory that holds its packed parts, one folder per codec.
+CACHE_DIRECTORY = "packed"
+#: How much of the packed rows ``cache="auto"`` keeps in memory before it goes to disk.
+DEFAULT_CACHE_MEMORY_MB = 2048
+#: The columns ``packed`` returns beside the rows.
+_SCALARS = ("action", "weight", "flags", "group", "seat", "tick", "reward")
 #: The driver's own flag bits. A producer names more in ``flag_names``, from bit 8 up.
 FLAG_PROJECTED = 1 << 0
 FLAG_OTHER_COMMAND = 1 << 1
@@ -374,6 +383,18 @@ class ShardWriter:
 # --------------------------------------------------------------------------
 
 
+class CachePlan(NamedTuple):
+    """Where a reader keeps the packed parts of one codec, and a line that says so."""
+
+    #: "memory", "disk", or None for not at all.
+    mode: str | None
+    #: The packed rows of every split, in bytes.
+    size: int
+    #: The folder of the disk cache.
+    where: Path | None
+    said: str
+
+
 class ShardBatch(NamedTuple):
     """One batch, decoded through the reading run's codec."""
 
@@ -408,8 +429,28 @@ class ShardReader:
         context: ShardContext,
         *,
         allow_engine_mismatch: str | None = None,
+        cache: str | None = "auto",
+        cache_memory_mb: int = DEFAULT_CACHE_MEMORY_MB,
+        cache_dir: str | Path | None = None,
     ) -> None:
+        """``cache`` keeps each part's packed rows after their first read, since ``packed``
+        gives the same rows every epoch and costs most of one on a processor. "memory" keeps
+        them in memory; "disk" as uncompressed ``.npy`` files in ``cache_dir`` (the shard's
+        ``packed`` folder by default), which a later reader of the same rows and codec reads
+        too; "auto" takes memory while every split's packed rows fit ``cache_memory_mb``, else
+        disk while it has room for them, else neither; None neither. The rows and their order
+        are the same whichever it is.
+        """
+        if cache not in ("auto", "memory", "disk", None):
+            raise ValueError(f"cache {cache!r} is not 'auto', 'memory', 'disk' or None")
         self.directory = Path(directory)
+        self._cache = cache
+        self._cache_memory = int(cache_memory_mb) * 2**20
+        self._cache_root = Path(cache_dir) if cache_dir is not None else None
+        self._plans: dict[str, CachePlan] = {}
+        self._held: dict[tuple[int, str, str], tuple[np.ndarray, dict[str, np.ndarray]]] = {}
+        #: What the last ``plan_cache`` chose: "memory", "disk" or None.
+        self.cache_mode: str | None = None
         path = self.directory / MANIFEST_NAME
         if not path.is_file():
             raise PreflightError(
@@ -501,6 +542,43 @@ class ShardReader:
             out.append(obs)
         return out
 
+    def plan_cache(self, codec: RowCodec) -> CachePlan:
+        """Where this reader keeps ``codec``'s packed parts, decided once per codec."""
+        key = _codec_key(codec)
+        if key in self._plans:
+            return self._plans[key]
+        size = int(self.manifest.rows) * int(codec.row_bytes)
+        root = self._cache_root
+        if root is None:
+            root = self.directory / CACHE_DIRECTORY
+        where = root / key[:16]
+        if self._cache is None:
+            plan = CachePlan(None, size, None, "not keeping the packed rows between epochs")
+        elif self._cache == "memory" or (self._cache == "auto" and size <= self._cache_memory):
+            said = f"keeping the packed rows in memory ({_size(size)})"
+            plan = CachePlan("memory", size, None, said)
+        else:
+            free = shutil.disk_usage(_existing(where)).free
+            if self._cache == "disk" or free >= size + 2**30:
+                plan = CachePlan(
+                    "disk",
+                    size,
+                    where,
+                    f"keeping the packed rows on disk in {where} ({_size(size)}; delete it once "
+                    "you are done with these rows)",
+                )
+            else:
+                plan = CachePlan(
+                    None,
+                    size,
+                    None,
+                    f"not keeping the packed rows between epochs: {_size(size)} is more than "
+                    f"cache_memory_mb allows, and the disk has {_size(free)} free",
+                )
+        self._plans[key] = plan
+        self.cache_mode = plan.mode
+        return plan
+
     def packed(
         self, index: int, codec: RowCodec, *, split: str = "all"
     ) -> tuple[np.ndarray, dict[str, np.ndarray]]:
@@ -509,7 +587,40 @@ class ShardReader:
         The static planes are not in a packed row: the codec supplies the run's own on decode.
         So they are checked here against the run's, and a part whose arena differs is refused
         rather than silently shown the run's.
+
+        Kept after the first read as ``plan_cache`` says, read-only, so that no caller can
+        change what the next epoch reads.
         """
+        plan = self.plan_cache(codec)
+        if plan.mode == "memory":
+            key = (int(index), split, _codec_key(codec))
+            if key not in self._held:
+                self._held[key] = _frozen(self._pack(index, codec, split))
+            return self._held[key]
+        if plan.mode == "disk":
+            assert plan.where is not None
+            stem = plan.where / f"{self.manifest.parts[index].sha256[:32]}-{split}"
+            rows_path, scalars_path = Path(f"{stem}.rows.npy"), Path(f"{stem}.scalars.npz")
+            if rows_path.is_file() and scalars_path.is_file():
+                with np.load(scalars_path) as stored:
+                    scalars = {name: stored[name] for name in stored.files}
+                return _frozen((np.load(rows_path, mmap_mode="r"), scalars))
+            rows, scalars = self._pack(index, codec, split)
+            plan.where.mkdir(parents=True, exist_ok=True)
+            # Written beside, then renamed: a reader never finds half a file under the name.
+            spare = f".{os.getpid()}.tmp"
+            with open(f"{rows_path}{spare}", "wb") as handle:
+                np.save(handle, rows)
+            with open(f"{scalars_path}{spare}", "wb") as handle:
+                np.savez(handle, **scalars)
+            os.replace(f"{rows_path}{spare}", rows_path)
+            os.replace(f"{scalars_path}{spare}", scalars_path)
+            return _frozen((rows, scalars))
+        return self._pack(index, codec, split)
+
+    def _pack(
+        self, index: int, codec: RowCodec, split: str
+    ) -> tuple[np.ndarray, dict[str, np.ndarray]]:
         columns = self.part(index)
         keep = _split_rows(columns["group"], split)
         observations = [
@@ -523,10 +634,7 @@ class ShardReader:
                     f"{self.directory / self.manifest.parts[index].name}: the rows' static planes "
                     "differ from this run's, so the codec would show them another arena"
                 )
-        scalars = {
-            name: columns[name][keep]
-            for name in ("action", "weight", "flags", "group", "seat", "tick", "reward")
-        }
+        scalars = {name: columns[name][keep] for name in _SCALARS}
         return codec.pack(observations), scalars
 
     # -- batches ---------------------------------------------------------------
@@ -593,6 +701,44 @@ class ShardReader:
             block = np.concatenate(rows)
             merged = {k: np.concatenate([c[k] for c in scalars]) for k in scalars[0]}
             yield from emit(block, merged)
+
+
+def _codec_key(codec: RowCodec) -> str:
+    """What decides the bytes a codec packs a row into: its kind, its table, its width and the
+    observation it reads."""
+    inner = codec.codec
+    return digest_of(
+        {
+            "codec": f"{type(inner).__module__}.{type(inner).__qualname__}",
+            "table": msgspec.to_builtins(getattr(inner, "codec_table", None)),
+            "row_bytes": int(codec.row_bytes),
+            "obs_digest": str(getattr(codec.spec, "obs_digest", "")),
+        }
+    )
+
+
+def _frozen(
+    result: tuple[np.ndarray, dict[str, np.ndarray]],
+) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    rows, scalars = result
+    if rows.flags.writeable:
+        rows.setflags(write=False)
+    for value in scalars.values():
+        value.setflags(write=False)
+    return rows, scalars
+
+
+def _existing(path: Path) -> Path:
+    """``path`` or its nearest parent that exists, for asking a disk how much it has free."""
+    while not path.exists() and path.parent != path:
+        path = path.parent
+    return path
+
+
+def _size(size: int) -> str:
+    if size < 2**30:
+        return f"{max(1, round(size / 2**20))} MB"
+    return f"{size / 2**30:.1f} GB"
 
 
 def _split_rows(groups: np.ndarray, split: str) -> np.ndarray:
