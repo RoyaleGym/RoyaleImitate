@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.13
 
 - `ShardReader` keeps each part's packed rows after their first read, so a second epoch reads
   no part file again: `cache="auto"` (the default) keeps them in memory while every split's
