@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.12
 
 - `python -m royaleimitate.stamp FOLDER` (`royaleimitate.stamp.stamp_actor_digest`) adds
   `actor_digest` to an actor folder written before it existed, from the folder's own
@@ -14,6 +14,8 @@
   ones, `tests/data/old-artifacts`).
 
 ## 0.2.11
+
+Tagged, never published to PyPI: its CI failed on the tag. Everything below is in 0.2.12.
 
 - `clone` says what it is doing: a first line with the rows, the device and the most epochs it
   may run, then one line per epoch with its validation NLL, the best so far, how long it took
