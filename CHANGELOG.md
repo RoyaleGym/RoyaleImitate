@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.11
 
 - `clone` says what it is doing: a first line with the rows, the device and the most epochs it
   may run, then one line per epoch with its validation NLL, the best so far, how long it took

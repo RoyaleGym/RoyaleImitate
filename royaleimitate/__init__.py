@@ -15,7 +15,7 @@ And ``from_replays``: human games from the public IL_Replay dataset, as demonstr
 
 from __future__ import annotations
 
-__version__ = "0.2.10"
+__version__ = "0.2.11"
 
 __all__ = ["clone", "from_replays", "record", "save_actor"]
 
