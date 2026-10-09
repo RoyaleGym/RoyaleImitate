@@ -429,7 +429,7 @@ class ShardReader:
         context: ShardContext,
         *,
         allow_engine_mismatch: str | None = None,
-        cache: str | None = "auto",
+        cache: str | bool | None = "auto",
         cache_memory_mb: int = DEFAULT_CACHE_MEMORY_MB,
         cache_dir: str | Path | None = None,
     ) -> None:
@@ -438,11 +438,13 @@ class ShardReader:
         them in memory; "disk" as uncompressed ``.npy`` files in ``cache_dir`` (the shard's
         ``packed`` folder by default), which a later reader of the same rows and codec reads
         too; "auto" takes memory while every split's packed rows fit ``cache_memory_mb``, else
-        disk while it has room for them, else neither; None neither. The rows and their order
-        are the same whichever it is.
+        disk while it has room for them, else neither; False (or None) neither, so nothing is
+        written beside the rows. The rows and their order are the same whichever it is.
         """
+        if cache is False:
+            cache = None
         if cache not in ("auto", "memory", "disk", None):
-            raise ValueError(f"cache {cache!r} is not 'auto', 'memory', 'disk' or None")
+            raise ValueError(f"cache {cache!r} is not 'auto', 'memory', 'disk' or False")
         self.directory = Path(directory)
         self._cache = cache
         self._cache_memory = int(cache_memory_mb) * 2**20
@@ -564,8 +566,8 @@ class ShardReader:
                     "disk",
                     size,
                     where,
-                    f"keeping the packed rows on disk in {where} ({_size(size)}; delete it once "
-                    "you are done with these rows)",
+                    f"keeping the packed rows on disk in {where} ({_size(size)} on disk; delete "
+                    "it once you are done with these rows, or pass cache=False not to write it)",
                 )
             else:
                 plan = CachePlan(

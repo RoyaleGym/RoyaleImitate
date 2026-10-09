@@ -6,8 +6,9 @@
   no part file again: `cache="auto"` (the default) keeps them in memory while every split's
   packed rows fit `cache_memory_mb` (2 GB), else as uncompressed `.npy` files in the shard's
   `packed` folder while the disk has room, which a later run on the same rows and codec reads
-  too, else not at all. `"memory"`, `"disk"` and None choose. The rows and their order are
-  the same whichever it is. `clone(cache=...)` passes it on and says which in its second line.
+  too, else not at all. `"memory"` and `"disk"` choose, and `False` keeps them nowhere and writes
+  nothing beside the rows. The rows and their order are the same whichever it is.
+  `clone(cache=...)` passes it on, and its second line says where and how much.
 
 ## 0.2.12
 

@@ -149,3 +149,19 @@ def test_auto_takes_memory_then_disk_then_nothing(
     none = ShardReader(directory, context, cache="auto", cache_memory_mb=0)
     assert none.plan_cache(codec).mode is None
     assert "free" in none.plan_cache(codec).said
+
+
+def test_false_turns_the_cache_off_and_the_disk_line_says_how(
+    run_side: Any,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """The disk cache writes beside a user's own rows, so turning it off is one word, and the
+    line that announces it says which, and how big it is."""
+    context, codec, observations = run_side
+    directory = _write(tmp_path, context, observations * 2, rows_per_part=32)
+    off = ShardReader(directory, context, cache=False)
+    assert off.plan_cache(codec).mode is None
+    disk = ShardReader(directory, context, cache="disk").plan_cache(codec)
+    assert "MB" in disk.said and "cache=False" in disk.said
+    with pytest.raises(ValueError, match="cache"):
+        ShardReader(directory, context, cache="sometimes")

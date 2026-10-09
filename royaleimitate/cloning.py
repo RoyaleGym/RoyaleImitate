@@ -124,7 +124,7 @@ def clone(
     patience: int = 3,
     seed: int = 0,
     printer: Callable[[str], None] | None = print,
-    cache: str | None = "auto",
+    cache: str | bool | None = "auto",
 ) -> str:
     """Train ``learner``'s network to copy the actions in ``demonstrations`` (a directory
     ``record`` returned) and write it to the folder ``out``. Returns the folder's digest, the
@@ -139,8 +139,10 @@ def clone(
     rest could take at that pace. None prints nothing.
 
     ``cache`` is where the demonstrations' packed rows are kept after the first epoch reads
-    them (``ShardReader``): "auto" in memory if they fit, else on disk if there is room;
-    "memory", "disk", or None to read them again every epoch. The second line says which.
+    them (``ShardReader``): "auto" in memory if they fit, else on disk beside the
+    demonstrations if there is room; "memory" or "disk" to choose; False to keep them nowhere
+    and read them again every epoch, which writes nothing beside your rows. The second line
+    says which, and how much it takes.
     """
     import torch
 
