@@ -38,7 +38,7 @@ from royalelearn.extensions import (
 
 from .artifacts import artifact_digest
 
-__all__ = ["POLICY_NAME", "Stamped", "main", "stamp_actor_digest"]
+__all__ = ["POLICY_NAME", "Stamped", "folder_actor_digest", "main", "stamp_actor_digest"]
 
 #: What ``write_policy_record`` writes beside an actor's weights.
 POLICY_NAME = "policy.json"
@@ -51,6 +51,20 @@ class Stamped(NamedTuple):
     old_sha256: str
     new_sha256: str
     actor_digest: str
+
+
+def folder_actor_digest(folder: str | os.PathLike[str], spec: SnapshotSpec) -> str | None:
+    """The ``actor_digest`` of ``folder``'s weights, read from its ``policy.json``; None when it
+    has none, or when that file does not give the ``arch_digest`` the weights were saved with."""
+    root = Path(folder)
+    if not (root / POLICY_NAME).is_file():
+        return None
+    record = msgspec.json.decode((root / POLICY_NAME).read_bytes())
+    env_spec = msgspec.convert(record["env_spec"], EnvSpec)
+    net = msgspec.convert(record["net"], NetConfig)
+    if arch_digest_of(env_spec, net) != spec.arch_digest:
+        return None
+    return actor_digest_of(env_spec, net)
 
 
 def stamp_actor_digest(folder: str | os.PathLike[str]) -> Stamped:

@@ -8,6 +8,10 @@
   Only `spec.json` changes: every tensor stays byte for byte, and the folder's old and new
   sha256 are printed. A stamped folder warm-starts a run that differs from it only in the
   precision, the device, the initialisation or the critic. Needs royalelearn 0.5.16.
+- A warm start or a reference from a folder written before `actor_digest`, into a run that
+  differs from it only there, is refused with the stamp command named; folders written by
+  royaleimitate 0.2.10 and royalelearn 0.5.14 load and warm-start as before (tested on real
+  ones, `tests/data/old-artifacts`).
 
 ## 0.2.11
 

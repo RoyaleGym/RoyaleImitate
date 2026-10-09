@@ -79,7 +79,7 @@ def test_a_stamped_folder_starts_a_student_with_another_critic(
     """Plant: stamp without writing the field, and the student is refused as before."""
     folder = _unstamped(saved, tmp_path)
     old = artifact_digest(folder)
-    with pytest.raises(PreflightError, match="arch_digest"):
+    with pytest.raises(PreflightError, match=r"python -m royaleimitate\.stamp"):
         _student(tmp_path, folder, old).learn(total_steps=16)
 
     weights = (folder / "actor.safetensors").read_bytes()

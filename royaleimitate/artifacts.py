@@ -228,12 +228,40 @@ def check_actor_artifact(artifact: ActorArtifact, current: SnapshotSpec, *, what
     """
     from royalelearn.extensions import check_compatible
 
+    _stamp_would_do(artifact, current, what=what)
     check_compatible(artifact.spec, current)
     if artifact.spec.action_digest and artifact.spec.action_digest != current.action_digest:
         raise PreflightError(
             f"{what}: the artifact was written for action space {artifact.spec.action_digest} and "
             f"this run's is {current.action_digest}"
         )
+
+
+def _stamp_would_do(artifact: ActorArtifact, current: SnapshotSpec, *, what: str) -> None:
+    """Refuse, naming the stamp, a folder that is held to ``arch_digest`` only because it was
+    written before ``actor_digest``, when its own ``policy.json`` shows its actor is this run's.
+
+    ``check_compatible`` would refuse it on ``arch_digest`` -- correctly, by the folder's own
+    statement -- and the difference may be only the precision, the device, the initialisation
+    or the critic, which one stamp fixes. Any other difference is left to ``check_compatible``.
+    """
+    spec = artifact.spec
+    if spec.actor_digest is not msgspec.UNSET or current.actor_digest is msgspec.UNSET:
+        return
+    if not spec.arch_digest or spec.arch_digest == current.arch_digest:
+        return
+    from .stamp import folder_actor_digest
+
+    if folder_actor_digest(artifact.folder, spec) != current.actor_digest:
+        return
+    raise PreflightError(
+        f"{what}: {artifact.folder} was written before actor folders said what their actor "
+        "computes, so it is held to this run's whole architecture (arch_digest), which differs "
+        "from it only where the actor's weights do not: the precision, the device, the "
+        "initialisation or the critic. Stamp it once and it loads: python -m "
+        f"royaleimitate.stamp {artifact.folder} "
+        "(that prints the folder's new sha256, for warm_start.init.sha256)"
+    )
 
 
 def load_actor_state(actor: Any, artifact: ActorArtifact, *, what: str) -> None:
