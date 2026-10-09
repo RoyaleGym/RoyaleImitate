@@ -119,6 +119,25 @@ def test_clone_copies_the_teacher_and_a_student_starts_from_it(
     assert student.run.extension_facts["warm_start"]["self_test"] == 0.0
 
 
+def test_clone_says_what_it_is_doing_and_how_long_it_may_take(
+    recorded: Any, tmp_path: Path
+) -> None:
+    """On a processor an epoch over a thousand matches takes a quarter of an hour, and a silent
+    clone read as a hung one (a user, 2026-10-09). Plant: drop the per-epoch line, and a clone
+    of 20 epochs says one thing in five hours."""
+    learner, directory = recorded
+    lines: list[str] = []
+    clone(learner, directory, tmp_path / "said", epochs=4, batch_size=64, printer=lines.append)
+    assert "rows" in lines[0] and "up to 4 epochs" in lines[0] and "cpu" in lines[0]
+    epochs = [line for line in lines if line.startswith("epoch ")]
+    assert epochs, lines
+    for index, line in enumerate(epochs, start=1):
+        assert line.startswith(f"epoch {index}/4: validation nll ")
+        assert "(best " in line
+    assert "at most" in epochs[0]
+    assert str(tmp_path / "said") in lines[-1]
+
+
 def test_clone_refuses_demonstrations_with_no_validation_battle(tmp_path: Path) -> None:
     learner = Learner(build_env, n_envs=2, save_dir=tmp_path / "s", **TINY)
     few = record(learner, first_legal_play, tmp_path / "few", battles=1, seed=0)

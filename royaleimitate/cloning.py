@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import copy
 import tempfile
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -122,6 +123,7 @@ def clone(
     weight_decay: float = 0.01,
     patience: int = 3,
     seed: int = 0,
+    printer: Callable[[str], None] | None = print,
 ) -> str:
     """Train ``learner``'s network to copy the actions in ``demonstrations`` (a directory
     ``record`` returned) and write it to the folder ``out``. Returns the folder's digest, the
@@ -130,11 +132,16 @@ def clone(
     Stops early once the validation NLL has not improved for ``patience`` epochs, and keeps the
     weights of the best epoch. The folder's ``spec.json`` records the validation NLL before
     training and after each epoch.
+
+    ``printer`` gets a line first (how many rows, on what device, how many epochs at most), then
+    one after each epoch: its validation NLL, how long it took, and at most how much longer the
+    rest could take at that pace. None prints nothing.
     """
     import torch
 
     from royalelearn.extensions import LearningCoordinator
 
+    say = printer or (lambda _line: None)
     config = learner.config
     reader = ShardReader(demonstrations, ShardContext.of_config(config))
     if not reader.manifest.validation_rows:
@@ -157,6 +164,14 @@ def clone(
                 actor.parameters(), lr=learning_rate, weight_decay=weight_decay
             )
             schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs))
+            rows = int(reader.manifest.rows)
+            held = int(reader.manifest.validation_rows)
+            threads = f", {torch.get_num_threads()} threads" if run.device.type == "cpu" else ""
+            say(
+                f"cloning {rows:,} rows ({rows - held:,} to learn from, {held:,} to check "
+                f"against) on {run.device}{threads}: up to {epochs} epochs, stopping once "
+                f"{patience} in a row do not improve"
+            )
 
             def nll(split: str, epoch: int, *, train: bool) -> float:
                 total, weight = 0.0, 0.0
@@ -179,16 +194,30 @@ def clone(
 
             history = [nll("validation", 0, train=False)]
             best, best_state, waited = history[0], copy.deepcopy(actor.state_dict()), 0
+            best_epoch = 0
             for epoch in range(int(epochs)):
+                started = time.monotonic()
                 nll("train", epoch, train=True)
                 schedule.step()
                 history.append(nll("validation", 0, train=False))
                 if history[-1] < best:
                     best, best_state, waited = history[-1], copy.deepcopy(actor.state_dict()), 0
+                    best_epoch = epoch + 1
                 else:
                     waited += 1
-                    if waited >= patience:
-                        break
+                taken = time.monotonic() - started
+                left = (int(epochs) - epoch - 1) * taken
+                say(
+                    f"epoch {epoch + 1}/{epochs}: validation nll {history[-1]:.4f} "
+                    f"(best {best:.4f}), {_duration(taken)}"
+                    + (f"; at most {_duration(left)} more" if left > 0 else "")
+                )
+                if waited >= patience:
+                    say(
+                        f"no better for {patience} epochs: stopping, and keeping epoch "
+                        f"{best_epoch}'s weights"
+                    )
+                    break
             actor.load_state_dict(best_state)
             actor.eval()
 
@@ -225,4 +254,15 @@ def clone(
             # ``Learner.load_env(out)`` rebuilds the environment it plays in.
             write_policy_record(out, run.spec, config.net)
             write_environment_record(out, learner.environment)
+            say(f"clone written to {out}")
     return artifact_digest(out)
+
+
+def _duration(seconds: float) -> str:
+    """``42 s``, ``14 min`` or ``4 h 10 min``."""
+    if seconds < 90:
+        return f"{seconds:.0f} s"
+    minutes = round(seconds / 60)
+    if minutes < 90:
+        return f"{minutes} min"
+    return f"{minutes // 60} h {minutes % 60} min"

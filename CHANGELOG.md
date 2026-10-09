@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `clone` says what it is doing: a first line with the rows, the device and the most epochs it
+  may run, then one line per epoch with its validation NLL, the best so far, how long it took
+  and at most how much longer the rest could take at that pace, and a line when it stops early.
+  `printer=` takes them like `from_replays`; None prints nothing.
+
 ## 0.2.10
 
 - `clone` and `save_actor` write `environment.json` beside the bot, what the learner's
