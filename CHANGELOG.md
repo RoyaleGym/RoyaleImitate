@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `python -m royaleimitate.stamp FOLDER` (`royaleimitate.stamp.stamp_actor_digest`) adds
+  `actor_digest` to an actor folder written before it existed, from the folder's own
+  `policy.json` once that is shown to give the `arch_digest` the weights were saved with.
+  Only `spec.json` changes: every tensor stays byte for byte, and the folder's old and new
+  sha256 are printed. A stamped folder warm-starts a run that differs from it only in the
+  precision, the device, the initialisation or the critic. Needs royalelearn 0.5.16.
+
 ## 0.2.11
 
 - `clone` says what it is doing: a first line with the rows, the device and the most epochs it

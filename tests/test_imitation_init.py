@@ -365,7 +365,9 @@ def test_an_init_of_another_architecture_is_refused_by_name(tmp_path: Path) -> N
         coordinator(_init_config(tmp_path, folder, digest)),
     ):
         pass
-    assert "arch_digest" in refused.value.differences
+    # Both folders say what their actor computes, so that is the field a different network
+    # differs in; a folder from before actor_digest would differ in arch_digest.
+    assert "actor_digest" in refused.value.differences
 
 
 def test_a_stale_digest_is_refused_before_anything_is_built(
@@ -535,7 +537,9 @@ def test_a_factored_actor_round_trips_through_an_artifact(tmp_path: Path) -> Non
         coordinator(_init_config(tmp_path / "pointer", folder, digest)),
     ):
         pass
-    assert "arch_digest" in refused.value.differences
+    # Both folders say what their actor computes, so that is the field a different network
+    # differs in; a folder from before actor_digest would differ in arch_digest.
+    assert "actor_digest" in refused.value.differences
 
 
 def test_a_reference_kl_needs_only_its_name_and_reference() -> None:
