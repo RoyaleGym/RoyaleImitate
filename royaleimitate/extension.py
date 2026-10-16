@@ -48,7 +48,20 @@ class Imitation(ExtensionBase):
         return royaleimitate
 
     def problems(self, section: ImitationSection, config: RunConfig) -> list[str]:
-        return imitation_problems(section)
+        problems = imitation_problems(section)
+        transform = getattr(config.ppo, "policy_transform", None)
+        if isinstance(transform, str):
+            from .config import FieldMLPReferenceSpec
+
+            problems.extend(
+                f"imitation.references.{name} is a field model of p(play), and "
+                f"ppo.policy_transform ({transform}) reshapes the policy it would be compared "
+                "with: hold a transformed run to a snapshot reference, whose logits go through "
+                "the same transform"
+                for name, reference in sorted(section.references.items())
+                if isinstance(reference, FieldMLPReferenceSpec)
+            )
+        return problems
 
     def verify(self, section: ImitationSection) -> list[str]:
         return verify_references(section)
@@ -77,6 +90,7 @@ class Imitation(ExtensionBase):
             codec=ctx.row_codec(),
             device=ctx.device,
             printer=ctx.printer,
+            transform=getattr(ctx, "policy_transform", None),
         )
         return build_terms(section, references, ctx.spec)
 

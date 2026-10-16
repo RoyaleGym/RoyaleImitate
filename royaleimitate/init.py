@@ -77,6 +77,9 @@ def loaded_ratio_guard(
     what a seeded actor's largest probability is. A loaded actor's is its own -- a cloned policy
     that holds on most rows puts far more than the bias's share on the no-op -- so the prediction
     is made from the actor itself, on the artifact's probe rows. Returns the prediction.
+
+    Read through the model, so under ``ppo.policy_transform`` it is the transformed policy's
+    largest probability and largest logit: the ratio is that policy's.
     """
     import torch
 
@@ -87,9 +90,9 @@ def loaded_ratio_guard(
     with torch.no_grad():
         for start in range(0, int(rows.shape[0]), PROBE_CHUNK):
             obs = codec.decode(rows[start : start + PROBE_CHUNK])
-            logits = model.actor.logits(obs).float()
+            logits = model.logits(obs).float()
             legal = obs.mask
-            probs = model.actor.distribution(obs).log_probs.exp()
+            probs = model.distribution(obs).log_probs.exp()
             p_max = max(p_max, float(torch.where(legal, probs, torch.zeros_like(probs)).max()))
             magnitude = max(
                 magnitude,

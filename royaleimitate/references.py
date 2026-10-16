@@ -42,18 +42,27 @@ class SnapshotReference:
 
     kind = "snapshot"
 
-    def __init__(self, name: str, actor: Any) -> None:
+    def __init__(self, name: str, actor: Any, transform: Any = None) -> None:
         self.name = name
         self.actor = actor.eval()
         for parameter in self.actor.parameters():
             parameter.requires_grad_(False)
+        #: The run's ``ppo.policy_transform``, or None. The learner's policy is the transform of
+        #: its actor's logits, so the reference it is held to is the transform of this actor's.
+        self.transform = transform
 
     def log_probs(self, obs: ObsBatch) -> Tensor:
-        """``(B, n_actions)`` float32 masked log-probabilities over each row's own mask."""
+        """``(B, n_actions)`` float32 masked log-probabilities over each row's own mask, of the
+        policy the run trains when this actor's weights are its actor's."""
         import torch
 
         with torch.no_grad():
-            return self.actor.distribution(obs).log_probs
+            if self.transform is None:
+                return self.actor.distribution(obs).log_probs
+            from royalelearn.extensions import MaskedCategorical
+
+            shaped = self.transform(self.actor.logits(obs), obs)
+            return MaskedCategorical(shaped, obs.mask).log_probs
 
     def noop_log_probs(self, obs: ObsBatch) -> tuple[Tensor, Tensor]:
         """``(log p(no-op), log p(play))``, each ``(B,)``."""
@@ -150,13 +159,15 @@ def build_references(
     codec: RowCodec,
     device: Any,
     printer: Callable[[str], None] | None = print,
+    transform: Any = None,
 ) -> Mapping[str, Reference]:
     """Every reference the block declares, loaded and checked, by name.
 
     A snapshot reference is checked the way an init is: its spec against the run's, a strict
     load, and -- when it carries probe rows -- the self-test on them, because a reference that
     does not compute the function it was saved as would anchor the run to something nobody
-    trained.
+    trained. The self-test reads the actor itself; the regularisers read it through
+    ``transform``, the run's ``ppo.policy_transform``, as the learner's policy is read.
     """
     from .config import FieldMLPReferenceSpec, SnapshotReferenceSpec
 
@@ -170,7 +181,7 @@ def build_references(
             check_actor_artifact(artifact, current, what=what)
             actor = build_actor(device)
             load_actor_state(actor, artifact, what=what)
-            loaded = SnapshotReference(name, actor)
+            loaded = SnapshotReference(name, actor, transform)
             said = "no probe rows"
             if artifact.probe is not None:
                 stated = reference.self_test_atol

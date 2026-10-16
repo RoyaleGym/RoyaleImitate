@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Under RoyaleLearn's `ppo.policy_transform` (royalelearn 0.5.19), a snapshot reference reads
+  its logits through the run's transform before the KL terms do, as the learner's policy is
+  read, so a run held to its own starting weights starts at no divergence. The warm start's
+  ratio guard measures the transformed policy. A field-model reference, which has no logits to
+  transform, is refused on a run with one. Without a transform nothing changes.
+
 ## 0.2.13
 
 - `ShardReader` keeps each part's packed rows after their first read, so a second epoch reads
