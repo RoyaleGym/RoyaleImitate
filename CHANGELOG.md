@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.14
 
 - Under RoyaleLearn's `ppo.policy_transform` (royalelearn 0.5.19), a snapshot reference reads
   its logits through the run's transform before the KL terms do, as the learner's policy is
