@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.15
 
 - `ShardReader` warns, once per plane, when the reading run's codec stores some of a part's
   values rounded: the rows hold a plane's fractions exactly, and the run's table, decided from a
