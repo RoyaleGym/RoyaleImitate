@@ -165,3 +165,48 @@ def test_false_turns_the_cache_off_and_the_disk_line_says_how(
     assert "MB" in disk.said and "cache=False" in disk.said
     with pytest.raises(ValueError, match="cache"):
         ShardReader(directory, context, cache="sometimes")
+
+
+def test_a_reading_codec_that_rounds_the_rows_says_so_once(
+    run_side: Any,  # noqa: F811
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rows hold a plane's fractions exactly; the reading run's table, decided from a sample
+    in which that plane was whole, stores it in a byte. Plant: pack without looking, and the
+    clone trains on whole numbers without a word."""
+    import royaleimitate.shards as shards
+
+    pytest.importorskip("royalelearn.rollout.codec").SpatialObsCodec.take_counts  # noqa: B018
+    context, codec, observations = run_side
+    plane = int(codec.codec.layout.u8_planes[0])
+    name = codec.spec.spatial_layout[plane][0]
+    fractional = []
+    for obs in observations:
+        copy = {key: np.array(value, copy=True) for key, value in obs.items()}
+        copy["spatial"][plane].flat[0] = 0.5
+        fractional.append(copy)
+    reader = ShardReader(_write(tmp_path, context, fractional), context, cache=False)
+    monkeypatch.setattr(shards, "_ROUNDED_SAID", set())
+    with pytest.warns(UserWarning, match=repr(name)):
+        reader.packed(0, codec)
+    with warnings_off():
+        reader.packed(1, codec)
+
+
+def warnings_off() -> Any:
+    """A context in which a warning fails the test: the plane was said once already."""
+    import warnings
+
+    context = warnings.catch_warnings()
+    context.__enter__()
+    warnings.simplefilter("error")
+
+    class _Off:
+        def __enter__(self) -> None:
+            return None
+
+        def __exit__(self, *exc: Any) -> None:
+            context.__exit__(*exc)
+
+    return _Off()

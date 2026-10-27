@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- `ShardReader` warns, once per plane, when the reading run's codec stores some of a part's
+  values rounded: the rows hold a plane's fractions exactly, and the run's table, decided from a
+  sample in which that plane was whole, keeps it in a byte. The warning names the plane and
+  `rollout.codec_float16_planes`, which keeps the fractions (royalelearn 0.5.20). The rows read
+  are what they were.
+
 ## 0.2.14
 
 - Under RoyaleLearn's `ppo.policy_transform` (royalelearn 0.5.19), a snapshot reference reads

@@ -637,7 +637,12 @@ class ShardReader:
                     "differ from this run's, so the codec would show them another arena"
                 )
         scalars = {name: columns[name][keep] for name in _SCALARS}
-        return codec.pack(observations), scalars
+        before = int(getattr(codec.codec, "rounded", 0))
+        rows = codec.pack(observations)
+        rounded = int(getattr(codec.codec, "rounded", 0)) - before
+        if rounded > 0:
+            _say_rounded(self.directory / self.manifest.parts[index].name, codec, rounded)
+        return rows, scalars
 
     # -- batches ---------------------------------------------------------------
 
@@ -716,6 +721,29 @@ def _codec_key(codec: RowCodec) -> str:
             "row_bytes": int(codec.row_bytes),
             "obs_digest": str(getattr(codec.spec, "obs_digest", "")),
         }
+    )
+
+
+#: The planes a reading codec has been said to round, so each is said once a process.
+_ROUNDED_SAID: set[str] = set()
+
+
+def _say_rounded(part: Path, codec: RowCodec, rounded: int) -> None:
+    """A warning, once per plane, that the reading run's codec stored some of the rows' values
+    rounded: its table admitted a plane to a byte that these rows hold fractions of."""
+    import warnings
+
+    plane = int(getattr(codec.codec, "rounded_plane", -1))
+    name = codec.spec.spatial_layout[plane][0] if plane >= 0 else "?"
+    if name in _ROUNDED_SAID:
+        return
+    _ROUNDED_SAID.add(name)
+    warnings.warn(
+        f"{part}: this run's codec stored {rounded} of the rows' values rounded, in its uint8 "
+        f"plane {name!r}, whose table was decided from a sample that held it whole. "
+        f"rollout.codec_float16_planes: [{name!r}] keeps the fractions",
+        UserWarning,
+        stacklevel=3,
     )
 
 
