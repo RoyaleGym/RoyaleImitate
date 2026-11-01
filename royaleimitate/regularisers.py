@@ -431,8 +431,8 @@ class DemoBC:
     An actor-loss term of the ``imitation`` extension. Each minibatch it draws ``batch_rows``
     rows from the learning split of its shards (a shard picked with the share of its rows, by a
     seeded draw), runs the live actor on them and hands the update ``(coef, mean NLL)``. The
-    update scales a ``minibatch`` term by the minibatch's share of its batch, so one epoch adds
-    ``coef`` times one mean NLL. A part's rows are packed again each time it comes round
+    update scales a ``minibatch`` term by the minibatch's share of its ppo batch, so each optimizer
+    step adds ``coef`` times one mean NLL. A part's rows are packed again each time it comes round
     (``cache=False``): a demonstration set can be far larger than memory, and the pack cache of a
     large set is what once filled a disk.
 
@@ -479,13 +479,22 @@ class DemoBC:
     def _stream(self, index: int) -> Any:
         reader = self.readers[index]
         while True:
-            yield from reader.batches(
+            yielded = 0
+            for batch in reader.batches(
                 self.codec,
                 split="train",
                 batch_rows=self.batch_rows,
                 seed=int(self._rng.integers(2**31)),
                 epoch=self._passes[index],
-            )
+            ):
+                yielded += 1
+                yield batch
+            if not yielded:
+                raise PreflightError(
+                    f"imitation.regularisers[{self.name!r}]: {reader.directory} gave no learning "
+                    "row in "
+                    "a whole pass, though its manifest counts some"
+                )
             self._passes[index] += 1
 
     def _next(self) -> Any:

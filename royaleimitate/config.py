@@ -165,9 +165,11 @@ class DemoBCSpec(
     """The BC cross-entropy on a batch of demonstration rows, added to the actor's loss each
     minibatch with a scheduled coefficient (section 19.12).
 
-    Each minibatch draws ``batch_rows`` rows from the shards' learning split, in an order that is
-    a function of ``seed`` alone, and adds ``coef * mean NLL`` scaled by the minibatch's share of
-    its batch, so an epoch adds ``coef`` times one mean NLL whatever the minibatch size. The NLL
+    Each minibatch draws ``batch_rows`` rows from the shards' learning split, in an order set by
+    ``seed``, and adds ``coef * mean NLL`` scaled by the minibatch's share of its ppo batch, so each
+    optimizer step adds ``coef`` times one mean NLL (over ``batch_size / minibatch_size`` draws),
+    and
+    an iteration ``n_epochs * samples / batch_size`` of them. The NLL
     is the actor's own masked distribution, as ``clone`` trains it, not ``ppo.policy_transform``'s.
     """
 
@@ -293,6 +295,8 @@ def _demo_bc_problems(reg: DemoBCSpec, label: str) -> list[str]:
             problems.append(f"{label}: shards[{index}] needs both a path and a sha256")
     if reg.batch_rows < 1:
         problems.append(f"{label}: batch_rows must be at least 1")
+    if reg.seed < 0:
+        problems.append(f"{label}: seed must be at least 0")
     if any(not value >= 0.0 for value in schedule_values(reg.coef)):
         problems.append(f"{label}: the coefficient takes a negative value")
     return problems

@@ -49,6 +49,15 @@ class Imitation(ExtensionBase):
 
     def problems(self, section: ImitationSection, config: RunConfig) -> list[str]:
         problems = imitation_problems(section)
+        from .config import DemoBCSpec
+
+        tier = getattr(getattr(config, "determinism", None), "tier", None)
+        if tier == "run_exact" and any(isinstance(r, DemoBCSpec) for r in section.regularisers):
+            problems.append(
+                "imitation: demo_bc draws a new order of its rows after a resume, so a run_exact "
+                "run "
+                "would not be the run that never stopped; use determinism.tier throughput"
+            )
         transform = getattr(config.ppo, "policy_transform", None)
         if isinstance(transform, str):
             from .config import FieldMLPReferenceSpec

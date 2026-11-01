@@ -359,8 +359,11 @@ key; there is no mismatch escape here.
   from a directory picked with the share of the learning rows it holds, in an order set by
   `seed`. The live actor runs on them; the term is `coef` times the weighted mean NLL of the
   stored actions under the actor's own masked distribution (as `clone` trains it, not through
-  `ppo.policy_transform`). The update scales it by the minibatch's share of its batch, so an
-  epoch adds `coef` times one mean NLL whatever the minibatch size.
+  `ppo.policy_transform`). The update scales it by the minibatch's share of its ppo batch, so
+  each optimizer step adds `coef` times one mean NLL, and an iteration `n_epochs` x
+  (samples / `batch_size`) of them.
+- A run with `demo_bc` must use `determinism.tier: throughput`, since a resume draws a new order.
+  A seed below 0 is refused, and so is a shard that yields no learning row in a whole pass.
 - Rows are packed again each time a part comes round: nothing is cached beside the shards.
 - Metrics: `imitation/<name>/lambda` (the coefficient), and from each iteration's first epoch
   `demo_nll`, `demo_top1` (the stored action is the actor's most likely) and `demo_rows`.
