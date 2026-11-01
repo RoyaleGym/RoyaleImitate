@@ -63,8 +63,7 @@ Every other field has a default: a regulariser's `budget` (a constant 0.1), its 
 - `init` (optional): the actor's starting weights (19.4).
 - `actor_lr_scale` (optional, a schedule): multiplies the actor's learning rate (19.5). Absent is 1.
 - `references`: named reference policies (19.6). A regulariser names one.
-- `regularisers`: `reference_kl` (19.7), and `demo_bc` (19.12), which is specified and not built:
-  a config that names it is refused. Each has a `name` that is unique
+- `regularisers`: `reference_kl` (19.7) and `demo_bc` (19.12). Each has a `name` that is unique
   in the list and becomes the metric segment `imitation/<name>/...`.
 
 Every schedule is an ordinary `ScheduleSpec` in env steps, the harness's one clock, so a resume
@@ -349,6 +348,25 @@ the rows file's sha256 go into the artifact's `meta`.
 **`demo_bc`** is a regulariser: the BC cross-entropy on a batch of demonstration rows, added to the
 actor's loss each minibatch with a scheduled coefficient. Its shards must carry the run's engine
 key; there is no mismatch escape here.
+
+    {"kind": "demo_bc", "name": "demo", "shards": [{"path": "...", "sha256": "<manifest sha256>"}],
+     "coef": {"kind": "constant", "value": 0.2}, "batch_rows": 64, "seed": 0}
+
+- `shards`: one or more shard directories, each named by the sha256 of its `manifest.json`. A
+  directory whose manifest has another digest is refused, and so is one replayed on another
+  engine or for another observation. The run identity holds the digests, not the paths.
+- Each minibatch draws `batch_rows` rows from the learning split (never the validation split),
+  from a directory picked with the share of the learning rows it holds, in an order set by
+  `seed`. The live actor runs on them; the term is `coef` times the weighted mean NLL of the
+  stored actions under the actor's own masked distribution (as `clone` trains it, not through
+  `ppo.policy_transform`). The update scales it by the minibatch's share of its batch, so an
+  epoch adds `coef` times one mean NLL whatever the minibatch size.
+- Rows are packed again each time a part comes round: nothing is cached beside the shards.
+- Metrics: `imitation/<name>/lambda` (the coefficient), and from each iteration's first epoch
+  `demo_nll`, `demo_top1` (the stored action is the actor's most likely) and `demo_rows`.
+- Its state is the number of batches drawn. A resume draws a new order from the same rows, seeded
+  by that number, rather than replaying the interrupted order.
+- A zero coefficient leaves the run bit-identical to one without the block.
 
 ### 19.13 Export and evaluation (L6)
 

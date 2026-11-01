@@ -74,6 +74,9 @@ class Imitation(ExtensionBase):
         value.pop("alarms", None)
         for reference in value.get("references", {}).values():
             reference.pop("path", None)
+        for regulariser in value.get("regularisers", []):
+            for shard in regulariser.get("shards", []):
+                shard.pop("path", None)
         return value
 
     def actor_terms(self, section: ImitationSection, ctx: RunContext) -> Sequence[ActorLossTerm]:
@@ -92,7 +95,15 @@ class Imitation(ExtensionBase):
             printer=ctx.printer,
             transform=getattr(ctx, "policy_transform", None),
         )
-        return build_terms(section, references, ctx.spec)
+        from .shards import ShardContext
+
+        return build_terms(
+            section,
+            references,
+            ctx.spec,
+            context=ShardContext.of_config(ctx.config),
+            codec=ctx.row_codec(),
+        )
 
     def alarms(self, section: ImitationSection) -> Sequence[Alarm]:
         if not section.regularisers:

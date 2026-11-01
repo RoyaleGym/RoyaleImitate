@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `demo_bc` (section 19.12) is built: a regulariser that adds the BC cross-entropy of the live
+  actor on demonstration rows to each minibatch's actor loss, with a scheduled coefficient. Its
+  shard directories are named by manifest digest and must carry the run's engine key. Before, a
+  config that named it was refused.
+
 ## 0.2.15
 
 - `ShardReader` warns, once per plane, when the reading run's codec stores some of a part's

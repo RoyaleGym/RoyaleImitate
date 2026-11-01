@@ -17,6 +17,8 @@ __all__ = [
     "KL_FACTORS",
     "ROW_OPS",
     "CoefSpec",
+    "DemoBCSpec",
+    "DemoShards",
     "FieldMLPReferenceSpec",
     "ImitationAlarms",
     "ImitationSection",
@@ -145,7 +147,38 @@ class ReferenceKLSpec(
     coef: CoefSpec = CoefSpec()
 
 
-RegulariserSpec = ReferenceKLSpec
+class DemoShards(msgspec.Struct, frozen=True, forbid_unknown_fields=True, kw_only=True):
+    """One demonstration shard directory, named by the sha256 of its manifest (section 19.12)."""
+
+    path: str
+    sha256: str
+
+
+class DemoBCSpec(
+    msgspec.Struct,
+    frozen=True,
+    forbid_unknown_fields=True,
+    kw_only=True,
+    tag_field="kind",
+    tag="demo_bc",
+):
+    """The BC cross-entropy on a batch of demonstration rows, added to the actor's loss each
+    minibatch with a scheduled coefficient (section 19.12).
+
+    Each minibatch draws ``batch_rows`` rows from the shards' learning split, in an order that is
+    a function of ``seed`` alone, and adds ``coef * mean NLL`` scaled by the minibatch's share of
+    its batch, so an epoch adds ``coef`` times one mean NLL whatever the minibatch size. The NLL
+    is the actor's own masked distribution, as ``clone`` trains it, not ``ppo.policy_transform``'s.
+    """
+
+    name: str
+    shards: list[DemoShards]
+    coef: ScheduleSpec = ConstantSpec(0.2)
+    batch_rows: int = 64
+    seed: int = 0
+
+
+RegulariserSpec = ReferenceKLSpec | DemoBCSpec
 
 
 class ImitationAlarms(msgspec.Struct, frozen=True, forbid_unknown_fields=True, kw_only=True):
@@ -211,6 +244,9 @@ def imitation_problems(section: ImitationSection) -> list[str]:
         if reg.name in seen:
             problems.append(f"{label}: two regularisers are named {reg.name!r}")
         seen.add(reg.name)
+        if isinstance(reg, DemoBCSpec):
+            problems.extend(_demo_bc_problems(reg, label))
+            continue
         reference = section.references.get(reg.reference)
         if reference is None:
             declared = ", ".join(sorted(section.references)) or "none"
@@ -245,4 +281,18 @@ def imitation_problems(section: ImitationSection) -> list[str]:
         for knob in ("up", "down", "band"):
             if not getattr(coef, knob) > 1.0:
                 problems.append(f"{label}: coef.{knob} must be above 1")
+    return problems
+
+
+def _demo_bc_problems(reg: DemoBCSpec, label: str) -> list[str]:
+    problems: list[str] = []
+    if not reg.shards:
+        problems.append(f"{label}: demo_bc names no shards")
+    for index, shard in enumerate(reg.shards):
+        if not shard.path or not shard.sha256:
+            problems.append(f"{label}: shards[{index}] needs both a path and a sha256")
+    if reg.batch_rows < 1:
+        problems.append(f"{label}: batch_rows must be at least 1")
+    if any(not value >= 0.0 for value in schedule_values(reg.coef)):
+        problems.append(f"{label}: the coefficient takes a negative value")
     return problems

@@ -75,6 +75,26 @@ IMITATION_PATTERNS = (
         ),
     ),
     pattern(
+        "imitation/{name}/demo_nll",
+        _m(
+            "nats",
+            "demo_bc: the actor's mean NLL of the demonstrated actions on the rows it drew in "
+            "epoch 1, weighted as the shards weigh them.",
+        ),
+    ),
+    pattern(
+        "imitation/{name}/demo_top1",
+        _m(
+            "fraction",
+            "demo_bc: the share of those rows whose demonstrated action is the actor's most "
+            "likely.",
+        ),
+    ),
+    pattern(
+        "imitation/{name}/demo_rows",
+        _m("count", "demo_bc: the demonstration rows drawn in epoch 1."),
+    ),
+    pattern(
         "imitation/{name}/ref_p_noop",
         _m("probability", "The reference's mean p(no-op) over the covered rows."),
     ),
@@ -88,6 +108,4 @@ IMITATION_ALARM_METRICS: dict[str, tuple[str, ...]] = {
 
 
 def schema_contribution() -> SchemaContribution:
-    return SchemaContribution(
-        patterns=IMITATION_PATTERNS, alarm_metrics=IMITATION_ALARM_METRICS
-    )
+    return SchemaContribution(patterns=IMITATION_PATTERNS, alarm_metrics=IMITATION_ALARM_METRICS)

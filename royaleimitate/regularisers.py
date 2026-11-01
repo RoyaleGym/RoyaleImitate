@@ -22,6 +22,8 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+import numpy as np
+
 from royalelearn.extensions import PreflightError, field_slice
 
 if TYPE_CHECKING:  # pragma: no cover - annotations only
@@ -29,11 +31,12 @@ if TYPE_CHECKING:  # pragma: no cover - annotations only
 
     from royalelearn.extensions import ActorTermInputs, EnvSpec, ObsBatch
 
-    from .config import CoefSpec, ImitationSection, ReferenceKLSpec
+    from .config import CoefSpec, DemoBCSpec, ImitationSection, ReferenceKLSpec
     from .references import Reference
 
 __all__ = [
     "AdaptiveCoefficient",
+    "DemoBC",
     "KLParts",
     "ReferenceKL",
     "RowFilter",
@@ -422,14 +425,179 @@ class ReferenceKL:
         self.coef.value = float(state["lambda"])
 
 
+class DemoBC:
+    """One ``demo_bc`` regulariser (section 19.12): the BC cross-entropy on demonstration rows.
+
+    An actor-loss term of the ``imitation`` extension. Each minibatch it draws ``batch_rows``
+    rows from the learning split of its shards (a shard picked with the share of its rows, by a
+    seeded draw), runs the live actor on them and hands the update ``(coef, mean NLL)``. The
+    update scales a ``minibatch`` term by the minibatch's share of its batch, so one epoch adds
+    ``coef`` times one mean NLL. A part's rows are packed again each time it comes round
+    (``cache=False``): a demonstration set can be far larger than memory, and the pack cache of a
+    large set is what once filled a disk.
+
+    Its state is how many batches it has drawn. A resume draws a new order from the same rows,
+    seeded by that count, rather than replaying the interrupted one.
+    """
+
+    extension = "imitation"
+    format_version = 1
+    #: A mean over its own rows, so the update scales it by the minibatch's share of its batch.
+    scaling = "minibatch"
+    measure_grad_ratio = True
+
+    def __init__(self, spec: DemoBCSpec, readers: Sequence[Any], codec: Any) -> None:
+        from royalelearn.extensions import build_schedule
+
+        self.name = spec.name
+        self.schedule = build_schedule(spec.coef)
+        self.batch_rows = int(spec.batch_rows)
+        self.seed = int(spec.seed)
+        self.readers = tuple(readers)
+        self.codec = codec
+        rows = [
+            max(0, int(reader.manifest.rows) - int(reader.manifest.validation_rows))
+            for reader in self.readers
+        ]
+        if not sum(rows):
+            raise PreflightError(
+                f"imitation.regularisers[{spec.name!r}]: its shards hold no learning row"
+            )
+        self._share = [count / sum(rows) for count in rows]
+        self.drawn = 0
+        self._streams: list[Any] | None = None
+        self._passes: list[int] = []
+        self._rng: Any = None
+        self.lam = self.schedule.value(0)
+        self._sums: dict[str, Tensor] = {}
+
+    def _restart(self) -> None:
+        self._rng = np.random.default_rng([self.seed, self.drawn])
+        self._streams = [None] * len(self.readers)
+        self._passes = [0] * len(self.readers)
+
+    def _stream(self, index: int) -> Any:
+        reader = self.readers[index]
+        while True:
+            yield from reader.batches(
+                self.codec,
+                split="train",
+                batch_rows=self.batch_rows,
+                seed=int(self._rng.integers(2**31)),
+                epoch=self._passes[index],
+            )
+            self._passes[index] += 1
+
+    def _next(self) -> Any:
+        if self._streams is None:
+            self._restart()
+        assert self._streams is not None
+        index = 0
+        if len(self.readers) > 1:
+            index = int(self._rng.choice(len(self.readers), p=self._share))
+        if self._streams[index] is None:
+            self._streams[index] = self._stream(index)
+        self.drawn += 1
+        return next(self._streams[index])
+
+    # -- one iteration -------------------------------------------------------
+
+    def begin(self, env_steps: int, device: Any) -> None:
+        import torch
+
+        self.lam = self.schedule.value(env_steps)
+        self._sums = {
+            name: torch.zeros((), dtype=torch.float32, device=device)
+            for name in ("nll", "top1", "weight", "rows")
+        }
+
+    def loss(self, inputs: ActorTermInputs, *, epoch: int, measure: bool) -> tuple[float, Tensor]:
+        """``(coef, mean NLL)`` of the live actor on one batch of demonstration rows."""
+        import torch
+
+        batch = self._next()
+        distribution = inputs.actor.distribution(batch.obs)
+        log_probs = distribution.log_prob(batch.actions)
+        weight = batch.weights.sum().clamp_min(1e-8)
+        nll = -(log_probs * batch.weights).sum() / weight
+        if measure:
+            with torch.no_grad():
+                agree = (distribution.log_probs.argmax(-1) == batch.actions).float()
+                self._sums["nll"] += nll.detach().float() * weight
+                self._sums["top1"] += (agree * batch.weights).sum()
+                self._sums["weight"] += weight
+                self._sums["rows"] += float(batch.actions.shape[0])
+        return self.lam, nll
+
+    def finish(
+        self,
+        *,
+        iteration: int,
+        actor_trained: bool,
+        explained_variance: float,
+        grad_ratio: float | None,
+    ) -> dict[str, float]:
+        """This iteration's coefficient, and on an iteration that trained, the epoch-1 NLL."""
+        prefix = f"imitation/{self.name}/"
+        fields: dict[str, float] = {prefix + "lambda": float(self.lam)}
+        weight = float(self._sums["weight"].item()) if self._sums else 0.0
+        if weight > 0:
+            fields[prefix + "demo_nll"] = float(self._sums["nll"].item()) / weight
+            fields[prefix + "demo_top1"] = float(self._sums["top1"].item()) / weight
+            fields[prefix + "demo_rows"] = float(self._sums["rows"].item())
+        if grad_ratio is not None:
+            fields[prefix + "grad_ratio"] = grad_ratio
+        return fields
+
+    def state(self) -> dict[str, Any]:
+        return {"drawn": self.drawn}
+
+    def load_state(self, state: Mapping[str, Any]) -> None:
+        self.drawn = int(state["drawn"])
+        self._streams = None
+
+
+def demo_readers(spec: DemoBCSpec, context: Any) -> list[Any]:
+    """The regulariser's shard directories, each checked against its stated manifest digest and
+    against the run. Another engine's rows are refused, with no escape (section 19.12)."""
+    from .shards import ShardReader
+
+    readers = []
+    for index, shard in enumerate(spec.shards):
+        reader = ShardReader(shard.path, context, cache=False)
+        found = reader.provenance["manifest_sha256"]
+        if found != shard.sha256:
+            raise PreflightError(
+                f"imitation.regularisers[{spec.name!r}].shards[{index}]: {shard.path} has "
+                f"manifest sha256 {found} and the config says {shard.sha256}"
+            )
+        readers.append(reader)
+    return readers
+
+
 def build_terms(
     imitation: ImitationSection | None,
     references: Mapping[str, Reference],
     env: EnvSpec,
-) -> tuple[ReferenceKL, ...]:
-    """One term per configured regulariser, in config order; none without the block."""
+    *,
+    context: Any = None,
+    codec: Any = None,
+) -> tuple[ReferenceKL | DemoBC, ...]:
+    """One term per configured regulariser, in config order; none without the block. A
+    ``demo_bc`` term reads its shards through the run's shard ``context`` and row ``codec``."""
+    from .config import DemoBCSpec
+
     if imitation is None:
         return ()
-    return tuple(
-        ReferenceKL(spec, references[spec.reference], env) for spec in imitation.regularisers
-    )
+    terms: list[ReferenceKL | DemoBC] = []
+    for spec in imitation.regularisers:
+        if isinstance(spec, DemoBCSpec):
+            if context is None or codec is None:
+                raise PreflightError(
+                    f"imitation.regularisers[{spec.name!r}]: demo_bc needs the run's shard "
+                    "context and row codec"
+                )
+            terms.append(DemoBC(spec, demo_readers(spec, context), codec))
+        else:
+            terms.append(ReferenceKL(spec, references[spec.reference], env))
+    return tuple(terms)
