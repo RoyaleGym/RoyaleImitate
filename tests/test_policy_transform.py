@@ -102,7 +102,9 @@ def test_a_run_held_to_its_own_starting_weights_starts_at_no_divergence(tmp_path
         transform, run.model.policy_transform = run.model.policy_transform, None
         loaded_ratio_guard(run.model, run.row_codec(), rows, **guard)
         run.model.policy_transform = transform
-    assert 0.0 <= kl < 1e-6, kl
+    # A policy against itself: zero, up to the rounding of a sum of terms that cancel, which on
+    # some processors comes out a few hundred-millionths below it.
+    assert -1e-7 <= kl < 1e-6, kl
     shaped, raw = (float(re.search(r"\|logit\| (\S+),", line)[1]) for line in said[:2])
     # Printed to three figures.
     assert shaped == pytest.approx(2.0 * raw, rel=1e-2), said
