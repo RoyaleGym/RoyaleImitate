@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.16
 
 - A `champion` reference (section 19.6): the ladder's champion, loaded again at the first update
   after each promotion, and a `snapshot` reference of the section (`start`) until a champion has
