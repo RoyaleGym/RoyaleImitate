@@ -119,6 +119,8 @@ class ChampionReference:
 
     ``follow`` is called at the start of each update, so every epoch of an update reads one
     policy and a promotion reaches the anchor at the update after the gate that made it. The
+    run's first champion is promoted into an empty ladder without a game, and unless
+    ``follow_first`` it is not followed: ``start`` anchors until a champion has won its gate. The
     weights are the pool's copy of the snapshot (float16, as the ladder's opponents play it). A
     resumed run loads the champion its pool names at its first update, which is what the run
     that never stopped held, so the reference adds no state of its own to a checkpoint.
@@ -136,11 +138,14 @@ class ChampionReference:
         load_snapshot: Callable[[str, Any], None],
         transform: Any = None,
         printer: Callable[[str], None] | None = None,
+        follow_first: bool = False,
     ) -> None:
         self.name = name
         self.start = start
         self.followed = SnapshotReference(name, actor, transform)
         self._champion = champion
+        #: False: the run's first champion, promoted without a game, is not followed.
+        self.follow_first = follow_first
         self._load = load_snapshot
         self._printer = printer
         #: The champion whose weights ``followed`` holds, or None while ``start`` anchors.
@@ -148,7 +153,7 @@ class ChampionReference:
 
     def follow(self) -> str | None:
         """Load the ladder's champion if it is not the one held. Returns the one held."""
-        champion = self._champion()
+        champion = self._champion(gated=not self.follow_first)
         if champion is not None and champion != self.held:
             self._load(champion, self.followed.actor)
             self.followed.actor.eval()
@@ -262,11 +267,13 @@ def build_references(
                 load_snapshot=load_snapshot,
                 transform=transform,
                 printer=printer,
+                follow_first=reference.follow_first,
             )
             if printer is not None:
+                until = "the first" if reference.follow_first else "one has won its gate"
                 printer(
                     f"imitation     reference {name}: the ladder's champion, "
-                    f"{reference.start} until the first"
+                    f"{reference.start} until {until}"
                 )
             continue
         if isinstance(reference, SnapshotReferenceSpec):

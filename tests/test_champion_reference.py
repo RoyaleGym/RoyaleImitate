@@ -75,40 +75,66 @@ def test_a_champion_needs_no_folder() -> None:
 
 
 class _Ladder:
-    """A champion that moves when told, and a store that counts its loads."""
+    """A champion chain that grows when told, and a store that counts its loads."""
 
     def __init__(self, weights: dict[str, Any]) -> None:
-        self.champion: str | None = None
+        self.chain: list[str] = []
         self.weights = weights
         self.loads: list[str] = []
+
+    def champion(self, gated: bool = False) -> str | None:
+        if not self.chain or (gated and len(self.chain) == 1):
+            return None
+        return self.chain[-1]
 
     def load(self, snapshot_id: str, actor: Any) -> None:
         self.loads.append(snapshot_id)
         actor.load_state_dict(self.weights[snapshot_id])
 
 
-def test_the_reference_is_start_until_a_champion_then_follows_it(env_spec: Any) -> None:
+@pytest.mark.parametrize("follow_first", [False, True])
+def test_the_reference_is_start_until_a_champion_then_follows_it(
+    env_spec: Any, follow_first: bool
+) -> None:
+    """``start`` until there is a champion to follow, then each champion once. The first,
+    promoted without a game, is followed only under ``follow_first``."""
     from test_policy_transform import _obs
 
     start = SnapshotReference("bc", build_model(env_spec, seed=1).actor)
-    one, two = (build_model(env_spec, seed=seed).actor for seed in (2, 3))
-    ladder = _Ladder({"snap:v1": one.state_dict(), "snap:v2": two.state_dict()})
+    zero, one, two = (build_model(env_spec, seed=seed).actor for seed in (2, 3, 5))
+    ladder = _Ladder(
+        {
+            "snap:v0": zero.state_dict(),
+            "snap:v1": one.state_dict(),
+            "snap:v2": two.state_dict(),
+        }
+    )
     reference = ChampionReference(
         "champ",
         start,
         build_model(env_spec, seed=4).actor,
-        champion=lambda: ladder.champion,
+        champion=ladder.champion,
         load_snapshot=ladder.load,
         printer=None,
+        follow_first=follow_first,
     )
     obs = _obs(env_spec, rows=6)
     assert reference.follow() is None
     assert torch.equal(reference.log_probs(obs), start.log_probs(obs))
-    for champion, actor in (("snap:v1", one), ("snap:v1", one), ("snap:v2", two)):
-        ladder.champion = champion
-        assert reference.follow() == champion
+    ladder.chain.append("snap:v0")
+    if follow_first:
+        assert reference.follow() == "snap:v0"
+        assert torch.equal(reference.log_probs(obs), zero.distribution(obs).log_probs)
+    else:
+        assert reference.follow() is None
+        assert torch.equal(reference.log_probs(obs), start.log_probs(obs))
+    for champion, actor in (("snap:v1", one), (None, one), ("snap:v2", two)):
+        if champion is not None:
+            ladder.chain.append(champion)
+        assert reference.follow() == ladder.chain[-1]
         assert torch.equal(reference.log_probs(obs), actor.distribution(obs).log_probs)
-    assert ladder.loads == ["snap:v1", "snap:v2"]
+    first = ["snap:v0"] if follow_first else []
+    assert ladder.loads == [*first, "snap:v1", "snap:v2"]
 
 
 def test_without_the_runs_champion_it_is_refused(env_spec: Any) -> None:
@@ -165,8 +191,9 @@ def _holds(term: ReferenceKL, run: Any, member: str) -> bool:
 def test_a_run_anchors_to_start_then_to_each_champion_and_resumes_holding_it(
     tmp_path: Path,
 ) -> None:
-    """The KL is measured against ``start`` (another seed's actor) until a promotion, then
-    against the champion, which is last iteration's learner and so much nearer. A resumed run
+    """The KL is measured against ``start`` (another seed's actor) until a champion has won its
+    gate, then against the champion, which is last iteration's learner and so much nearer. The
+    first champion, promoted into an empty ladder without a game, moves nothing. A resumed run
     holds the champion its pool names from its first update."""
     folder = tmp_path / "other-seed"
     digest = seeded_artifact(tiny_config(tmp_path / "donor", master_seed=77), folder, coordinator)
@@ -174,6 +201,9 @@ def test_a_run_anchors_to_start_then_to_each_champion_and_resumes_holding_it(
     with coordinator(config) as run:
         run.iterate()
         term = _term(run)
+        assert term.reference.held is None  # type: ignore[union-attr]
+        _promote(run, "snap:c0")
+        run.iterate()
         assert term.reference.held is None  # type: ignore[union-attr]
         against_start = run.rows[-1]["imitation/champ/kl"]
         _promote(run, "snap:c1")

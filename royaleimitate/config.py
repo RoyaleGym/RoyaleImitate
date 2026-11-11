@@ -114,10 +114,14 @@ class ChampionReferenceSpec(
 ):
     """The ladder's champion, on a second copy of the run's actor, followed from one promotion
     to the next: its weights are loaded again at the first update after a gate promotes another.
-    Until the ladder has a champion it is ``start``."""
+    Until there is a champion to follow it is ``start``."""
 
-    #: A ``snapshot`` reference of this section, the anchor until the first promotion.
+    #: A ``snapshot`` reference of this section, the anchor until there is a champion to follow.
     start: str
+    #: The run's first champion is promoted into an empty ladder without a game. False: it is
+    #: not followed, and ``start`` anchors until a champion has won its gate by playing. True:
+    #: it is followed as every later one is.
+    follow_first: bool = False
 
 
 ReferenceSpec = SnapshotReferenceSpec | FieldMLPReferenceSpec | ChampionReferenceSpec

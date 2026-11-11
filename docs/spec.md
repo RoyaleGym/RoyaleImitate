@@ -164,9 +164,12 @@ autocast, and never trained.
   (`RunContext.champion`, royalelearn 0.5.23) and, when it is not the one held, loads the pool's
   copy of its weights (float16, as the ladder's opponents play it; `RunContext.load_snapshot`).
   A promotion reaches the anchor at the update after the gate that made it, and every epoch of
-  an update reads one policy. Until the ladder has a champion it is `start`, which names a
-  `snapshot` reference of the section. It has no folder, so no path and no digest. The
-  coefficient (19.8) is the regulariser's own and does not reset when the champion changes.
+  an update reads one policy. Until there is a champion to follow it is `start`, which names a
+  `snapshot` reference of the section. The run's first champion is promoted into an empty
+  ladder without a game, so by default it is not followed and `start` anchors until a champion
+  has won its gate (`follow_first: true` follows it too). A floor admission never promotes, so
+  it never moves the anchor. It has no folder, so no path and no digest. The coefficient (19.8)
+  is the regulariser's own and does not reset when the champion changes.
 
 A reference is a function of the observation alone, or for a `champion` of the observation and the
 pool's champion, which the ladder's checkpoint holds; so none adds state to a checkpoint.
