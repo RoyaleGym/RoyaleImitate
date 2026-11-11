@@ -34,6 +34,9 @@ IMITATION: dict[str, Any] = {
 #: The regularisers' families, published on a run with regularisers only.
 PUBLISHED_PATTERNS = (
     "imitation/{name}/budget",
+    "imitation/{name}/demo_nll",
+    "imitation/{name}/demo_rows",
+    "imitation/{name}/demo_top1",
     "imitation/{name}/grad_ratio",
     "imitation/{name}/kl",
     "imitation/{name}/kl_card",
