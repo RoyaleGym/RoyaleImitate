@@ -1,9 +1,11 @@
 """Reference policies: fixed policies a run is compared with, never trained (section 19.6).
 
-Two kinds. A ``snapshot`` is an actor artifact on a second copy of the run's own actor, so it has
-an opinion about every legal action. A ``field_mlp`` is a small model over named observation
+Three kinds. A ``snapshot`` is an actor artifact on a second copy of the run's own actor, so it
+has an opinion about every legal action. A ``field_mlp`` is a small model over named observation
 fields that gives the logit of p(play) on a row, and has an opinion about nothing else: it can
-anchor the play/wait marginal and cannot say which card or which tile.
+anchor the play/wait marginal and cannot say which card or which tile. A ``champion`` is the
+ladder's champion on another copy of the actor, loaded again whenever a gate promotes a new one,
+and a ``snapshot`` reference of the section until the first promotion.
 
 Both are evaluated under ``no_grad`` on the rows the actor is trained on, with the observation
 the actor sees -- the same decoded batch -- so a difference between a reference and the policy
@@ -34,7 +36,7 @@ if TYPE_CHECKING:  # pragma: no cover - annotations only
 
     from .config import ImitationSection
 
-__all__ = ["FieldMLPReference", "SnapshotReference", "build_references"]
+__all__ = ["ChampionReference", "FieldMLPReference", "SnapshotReference", "build_references"]
 
 
 class SnapshotReference:
@@ -111,7 +113,62 @@ class FieldMLPReference:
         return F.logsigmoid(-logit), F.logsigmoid(logit)
 
 
-Reference = SnapshotReference | FieldMLPReference
+class ChampionReference:
+    """The ladder's champion on a frozen copy of the run's actor, followed from one promotion to
+    the next, and ``start`` until the ladder has one.
+
+    ``follow`` is called at the start of each update, so every epoch of an update reads one
+    policy and a promotion reaches the anchor at the update after the gate that made it. The
+    weights are the pool's copy of the snapshot (float16, as the ladder's opponents play it). A
+    resumed run loads the champion its pool names at its first update, which is what the run
+    that never stopped held, so the reference adds no state of its own to a checkpoint.
+    """
+
+    kind = "champion"
+
+    def __init__(
+        self,
+        name: str,
+        start: SnapshotReference,
+        actor: Any,
+        *,
+        champion: Callable[[], str | None],
+        load_snapshot: Callable[[str, Any], None],
+        transform: Any = None,
+        printer: Callable[[str], None] | None = None,
+    ) -> None:
+        self.name = name
+        self.start = start
+        self.followed = SnapshotReference(name, actor, transform)
+        self._champion = champion
+        self._load = load_snapshot
+        self._printer = printer
+        #: The champion whose weights ``followed`` holds, or None while ``start`` anchors.
+        self.held: str | None = None
+
+    def follow(self) -> str | None:
+        """Load the ladder's champion if it is not the one held. Returns the one held."""
+        champion = self._champion()
+        if champion is not None and champion != self.held:
+            self._load(champion, self.followed.actor)
+            self.followed.actor.eval()
+            self.held = champion
+            if self._printer is not None:
+                self._printer(f"imitation     reference {self.name} follows {champion}")
+        return self.held
+
+    @property
+    def current(self) -> SnapshotReference:
+        return self.start if self.held is None else self.followed
+
+    def log_probs(self, obs: ObsBatch) -> Tensor:
+        return self.current.log_probs(obs)
+
+    def noop_log_probs(self, obs: ObsBatch) -> tuple[Tensor, Tensor]:
+        return self.current.noop_log_probs(obs)
+
+
+Reference = SnapshotReference | FieldMLPReference | ChampionReference
 
 
 def _field_mlp(name: str, folder: Any, spec: EnvSpec, device: Any) -> FieldMLPReference:
@@ -160,6 +217,8 @@ def build_references(
     device: Any,
     printer: Callable[[str], None] | None = print,
     transform: Any = None,
+    champion: Callable[[], str | None] | None = None,
+    load_snapshot: Callable[[str, Any], None] | None = None,
 ) -> Mapping[str, Reference]:
     """Every reference the block declares, loaded and checked, by name.
 
@@ -168,14 +227,48 @@ def build_references(
     does not compute the function it was saved as would anchor the run to something nobody
     trained. The self-test reads the actor itself; the regularisers read it through
     ``transform``, the run's ``ppo.policy_transform``, as the learner's policy is read.
+
+    A champion reference is built after the others, around its ``start``, with the run's
+    ``champion`` and ``load_snapshot`` (the run context's): without them there is no champion
+    to follow, and it is refused.
     """
-    from .config import FieldMLPReferenceSpec, SnapshotReferenceSpec
+    from .config import ChampionReferenceSpec, FieldMLPReferenceSpec, SnapshotReferenceSpec
 
     if imitation is None:
         return {}
     out: dict[str, Reference] = {}
-    for name, reference in sorted(imitation.references.items()):
+    ordered = sorted(
+        imitation.references.items(),
+        key=lambda item: (isinstance(item[1], ChampionReferenceSpec), item[0]),
+    )
+    for name, reference in ordered:
         what = f"imitation.references.{name}"
+        if isinstance(reference, ChampionReferenceSpec):
+            if champion is None or load_snapshot is None:
+                raise PreflightError(
+                    f"{what}: a champion reference follows the ladder's champion, and this "
+                    "royalelearn's run context does not name it (it needs 0.5.23 or later)"
+                )
+            start = out.get(reference.start)
+            if not isinstance(start, SnapshotReference):
+                raise PreflightError(
+                    f"{what}: start {reference.start!r} is not a snapshot reference"
+                )
+            out[name] = ChampionReference(
+                name,
+                start,
+                build_actor(device),
+                champion=champion,
+                load_snapshot=load_snapshot,
+                transform=transform,
+                printer=printer,
+            )
+            if printer is not None:
+                printer(
+                    f"imitation     reference {name}: the ladder's champion, "
+                    f"{reference.start} until the first"
+                )
+            continue
         if isinstance(reference, SnapshotReferenceSpec):
             artifact = read_actor_artifact(reference.path)
             check_actor_artifact(artifact, current, what=what)

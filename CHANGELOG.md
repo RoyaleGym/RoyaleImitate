@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A `champion` reference (section 19.6): the ladder's champion, loaded again at the first update
+  after each promotion, and a `snapshot` reference of the section (`start`) until the first. A
+  `reference_kl` regulariser that names it keeps its adaptive coefficient. Needs royalelearn
+  0.5.23, whose run context names the champion.
 - `demo_bc` (section 19.12) is built: a regulariser that adds the BC cross-entropy of the live
   actor on demonstration rows to each minibatch's actor loss, with a scheduled coefficient. Its
   shard directories are named by manifest digest and must carry the run's engine key. Before, a

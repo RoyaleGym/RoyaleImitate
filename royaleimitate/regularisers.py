@@ -247,7 +247,7 @@ class ReferenceKL:
         from royalelearn.extensions import build_schedule
 
         what = f"imitation.regularisers[{spec.name!r}]"
-        if spec.factor == "joint" and reference.kind != "snapshot":
+        if spec.factor == "joint" and reference.kind not in ("snapshot", "champion"):
             raise PreflightError(f"{what}: factor 'joint' needs a snapshot reference")
         self.name = spec.name
         self.factor = spec.factor
@@ -269,6 +269,11 @@ class ReferenceKL:
         import torch
 
         self.env_steps = int(env_steps)
+        # A champion reference loads a newly promoted champion here, so every epoch of the
+        # update reads one policy and the cache below is that policy's.
+        follow = getattr(self.reference, "follow", None)
+        if follow is not None:
+            follow()
         self.lam = self.coef.current(env_steps)
         self.kappa = self.budget.value(env_steps)
         names = ("kl", "rows", "noop", "top1", "ref_p_noop")

@@ -26,9 +26,12 @@ def verify_references(section: ImitationSection) -> list[str]:
     from royalelearn.extensions import PreflightError
 
     from .artifacts import verify_artifact
+    from .config import ChampionReferenceSpec
 
     problems: list[str] = []
     for name, reference in sorted(section.references.items()):
+        if isinstance(reference, ChampionReferenceSpec):
+            continue  # no folder: its weights are the pool's
         try:
             verify_artifact(reference.path, reference.sha256, what=f"imitation.references.{name}")
         except PreflightError as exc:
@@ -103,6 +106,8 @@ class Imitation(ExtensionBase):
             device=ctx.device,
             printer=ctx.printer,
             transform=getattr(ctx, "policy_transform", None),
+            champion=getattr(ctx, "champion", None),
+            load_snapshot=getattr(ctx, "load_snapshot", None),
         )
         from .shards import ShardContext
 

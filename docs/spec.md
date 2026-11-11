@@ -159,8 +159,17 @@ autocast, and never trained.
   layer widths and activation. At load every field must exist in the run's vector layout with that
   width, or it is refused naming the field. It defines only the play/wait marginal:
   p_ref(no-op) = sigmoid(-z).
+- **`champion`**: the ladder's champion, on another copy of the run's actor, followed from one
+  promotion to the next. At the start of each update the term asks the run for the champion
+  (`RunContext.champion`, royalelearn 0.5.23) and, when it is not the one held, loads the pool's
+  copy of its weights (float16, as the ladder's opponents play it; `RunContext.load_snapshot`).
+  A promotion reaches the anchor at the update after the gate that made it, and every epoch of
+  an update reads one policy. Until the ladder has a champion it is `start`, which names a
+  `snapshot` reference of the section. It has no folder, so no path and no digest. The
+  coefficient (19.8) is the regulariser's own and does not reset when the champion changes.
 
-A reference is a function of the observation alone, so it adds no state to a checkpoint.
+A reference is a function of the observation alone, or for a `champion` of the observation and the
+pool's champion, which the ladder's checkpoint holds; so none adds state to a checkpoint.
 
 ### 19.7 The reference-KL regulariser
 

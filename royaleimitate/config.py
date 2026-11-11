@@ -16,6 +16,7 @@ from royalelearn.extensions import ConstantSpec, PiecewiseConstantSpec, Schedule
 __all__ = [
     "KL_FACTORS",
     "ROW_OPS",
+    "ChampionReferenceSpec",
     "CoefSpec",
     "DemoBCSpec",
     "DemoShards",
@@ -103,7 +104,23 @@ class FieldMLPReferenceSpec(
     sha256: str
 
 
-ReferenceSpec = SnapshotReferenceSpec | FieldMLPReferenceSpec
+class ChampionReferenceSpec(
+    msgspec.Struct,
+    frozen=True,
+    forbid_unknown_fields=True,
+    kw_only=True,
+    tag_field="kind",
+    tag="champion",
+):
+    """The ladder's champion, on a second copy of the run's actor, followed from one promotion
+    to the next: its weights are loaded again at the first update after a gate promotes another.
+    Until the ladder has a champion it is ``start``."""
+
+    #: A ``snapshot`` reference of this section, the anchor until the first promotion.
+    start: str
+
+
+ReferenceSpec = SnapshotReferenceSpec | FieldMLPReferenceSpec | ChampionReferenceSpec
 
 
 class RowCondition(msgspec.Struct, frozen=True, forbid_unknown_fields=True, kw_only=True):
@@ -233,6 +250,14 @@ def imitation_problems(section: ImitationSection) -> list[str]:
     for name, reference in section.references.items():
         if not name or "/" in name:
             problems.append(f"{where}.references: {name!r} is not a usable name")
+        if isinstance(reference, ChampionReferenceSpec):
+            start = section.references.get(reference.start)
+            if not isinstance(start, SnapshotReferenceSpec):
+                problems.append(
+                    f"{where}.references.{name}: start {reference.start!r} must name a snapshot "
+                    "reference of this section, the anchor until the ladder has a champion"
+                )
+            continue
         if not reference.path or not reference.sha256:
             problems.append(f"{where}.references.{name} needs both a path and a sha256")
         atol = getattr(reference, "self_test_atol", msgspec.UNSET)
