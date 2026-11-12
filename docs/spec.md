@@ -171,6 +171,10 @@ autocast, and never trained.
   it never moves the anchor. It has no folder, so no path and no digest. The coefficient (19.8)
   is the regulariser's own and does not reset when the champion changes.
 
+A `snapshot` or `champion` reference may set `autocast_dtype` ("bfloat16" or "float32"): its forward
+at that precision with its head at float32, whatever the run's actor runs at. A reference never
+enters the importance ratio. A snapshot's self-test runs before the precision is set.
+
 A reference is a function of the observation alone, or for a `champion` of the observation and the
 pool's champion, which the ladder's checkpoint holds; so none adds state to a checkpoint.
 
@@ -374,6 +378,10 @@ key; there is no mismatch escape here.
   `ppo.policy_transform`). The update scales it by the minibatch's share of its ppo batch, so
   each optimizer step adds `coef` times one mean NLL, and an iteration `n_epochs` x
   (samples / `batch_size`) of them.
+- `autocast_dtype` ("bfloat16" or "float32", unset by default): the live actor's forward on the
+  demonstration rows at that precision, its head at float32, and only that forward: the policy's
+  own forwards keep the run's precision. The BC loss never enters the importance ratio, so an
+  actor kept at float32 for the ratio guard keeps its exact ratio. The parameters stay float32.
 - A run with `demo_bc` must use `determinism.tier: throughput`, since a resume draws a new order.
   A seed below 0 is refused, and so is a shard that yields no learning row in a whole pass.
 - Rows are packed again each time a part comes round: nothing is cached beside the shards.

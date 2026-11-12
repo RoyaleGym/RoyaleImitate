@@ -88,6 +88,12 @@ class SnapshotReferenceSpec(
     #: means 1e-5 and keeps a run's identity as it was. A run whose kernels differ from the
     #: recording's (``determinism.tier`` throughput picks its convolutions by timing) states it.
     self_test_atol: float | msgspec.UnsetType = msgspec.UNSET
+    #: The forward at this precision, the head at float32, whatever the run's actor runs at.
+    #: A reference never enters the importance ratio, so an actor kept at float32 for the ratio
+    #: guard can be compared with a reference evaluated on the bfloat16 path. "bfloat16" or
+    #: "float32"; unset means the precision the run's actor has, and is left out of the
+    #: encoding.
+    autocast_dtype: str | msgspec.UnsetType = msgspec.UNSET
 
 
 class FieldMLPReferenceSpec(
@@ -118,6 +124,12 @@ class ChampionReferenceSpec(
 
     #: A ``snapshot`` reference of this section, the anchor until there is a champion to follow.
     start: str
+    #: The champion's forward at this precision, the head at float32, whatever the run's actor
+    #: runs at (``start`` has its own). A reference never enters the importance ratio, so an
+    #: actor kept at float32 for the ratio guard can be compared with a reference evaluated on
+    #: the bfloat16 path. "bfloat16" or "float32"; unset means the precision the run's actor
+    #: has, and is left out of the encoding.
+    autocast_dtype: str | msgspec.UnsetType = msgspec.UNSET
     #: The run's first champion is promoted into an empty ladder without a game. False: it is
     #: not followed, and ``start`` anchors until a champion has won its gate by playing. True:
     #: it is followed as every later one is.
@@ -199,6 +211,12 @@ class DemoBCSpec(
     coef: ScheduleSpec = ConstantSpec(0.2)
     batch_rows: int = 64
     seed: int = 0
+    #: The live actor's forward on the demonstration rows at this precision, its head at
+    #: float32, whatever the actor runs at elsewhere. The BC loss never enters the importance
+    #: ratio, so an actor kept at float32 for the ratio guard can take this term's gradient
+    #: through the bfloat16 path; the parameters stay float32. "bfloat16" or "float32"; unset
+    #: means the actor's own precision, and is left out of the encoding.
+    autocast_dtype: str | msgspec.UnsetType = msgspec.UNSET
 
 
 RegulariserSpec = ReferenceKLSpec | DemoBCSpec
@@ -243,6 +261,16 @@ def warm_start_problems(section: WarmStartSection) -> list[str]:
     return problems
 
 
+#: The precisions a reference's or demo_bc's forward may take.
+PRECISIONS = ("bfloat16", "float32")
+
+
+def _precision_problems(value: object, label: str) -> list[str]:
+    if value is msgspec.UNSET or value in PRECISIONS:
+        return []
+    return [f"{label}.autocast_dtype is {value!r}, which is not one of {', '.join(PRECISIONS)}"]
+
+
 def imitation_problems(section: ImitationSection) -> list[str]:
     """What is wrong with an ``imitation`` section that can be seen without building anything.
 
@@ -254,6 +282,11 @@ def imitation_problems(section: ImitationSection) -> list[str]:
     for name, reference in section.references.items():
         if not name or "/" in name:
             problems.append(f"{where}.references: {name!r} is not a usable name")
+        problems.extend(
+            _precision_problems(
+                getattr(reference, "autocast_dtype", msgspec.UNSET), f"{where}.references.{name}"
+            )
+        )
         if isinstance(reference, ChampionReferenceSpec):
             start = section.references.get(reference.start)
             if not isinstance(start, SnapshotReferenceSpec):
@@ -326,6 +359,7 @@ def _demo_bc_problems(reg: DemoBCSpec, label: str) -> list[str]:
         problems.append(f"{label}: batch_rows must be at least 1")
     if reg.seed < 0:
         problems.append(f"{label}: seed must be at least 0")
+    problems.extend(_precision_problems(reg.autocast_dtype, label))
     if any(not value >= 0.0 for value in schedule_values(reg.coef)):
         problems.append(f"{label}: the coefficient takes a negative value")
     return problems

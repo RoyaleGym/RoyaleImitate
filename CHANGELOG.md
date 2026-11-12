@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.17
+
+- `autocast_dtype` on a `snapshot` or `champion` reference and on `demo_bc`: the reference's
+  forward, or the live actor's forward on the demonstration rows, at bfloat16 with the head at
+  float32, whatever the run's actor runs at. Neither enters the importance ratio, so an actor kept
+  at float32 for the ratio guard keeps its exact ratio. A snapshot reference's self-test runs
+  before the precision is set; the live actor's own forwards keep the run's precision.
+
 ## 0.2.16
 
 - A `champion` reference (section 19.6): the ladder's champion, loaded again at the first update

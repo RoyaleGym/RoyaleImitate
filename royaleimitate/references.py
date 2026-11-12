@@ -14,7 +14,8 @@ is never a difference between two views of the state.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+import contextlib
+from collections.abc import Callable, Iterator, Mapping
 from typing import TYPE_CHECKING, Any
 
 import msgspec
@@ -36,7 +37,51 @@ if TYPE_CHECKING:  # pragma: no cover - annotations only
 
     from .config import ImitationSection
 
-__all__ = ["ChampionReference", "FieldMLPReference", "SnapshotReference", "build_references"]
+__all__ = [
+    "ChampionReference",
+    "FieldMLPReference",
+    "SnapshotReference",
+    "actor_precision",
+    "build_references",
+    "set_precision",
+]
+
+
+def _dtype(name: str) -> Any:
+    import torch
+
+    return {"bfloat16": torch.bfloat16, "float32": torch.float32}[name]
+
+
+def set_precision(actor: Any, name: Any) -> None:
+    """An actor's forward at ``name`` with its head at float32 from now on; unset leaves it.
+
+    For a frozen copy the run owns alone, as a reference's is. The head at float32 because its
+    logits feed a KL or a log-likelihood, and a logit rounded to bfloat16 moves every action's
+    log-probability.
+    """
+    if name is msgspec.UNSET or name is None:
+        return
+    actor.autocast_dtype = _dtype(str(name))
+    actor.head_float32 = True
+
+
+@contextlib.contextmanager
+def actor_precision(actor: Any, name: Any) -> Iterator[None]:
+    """``set_precision`` for the forwards inside the block only, then the actor as it was.
+
+    For the live actor, whose own forwards (the policy's, the rollout's) keep the run's
+    precision. A backward through a forward taken here runs at the precision it was taken at.
+    """
+    if name is msgspec.UNSET or name is None:
+        yield
+        return
+    was = (actor.autocast_dtype, actor.head_float32)
+    set_precision(actor, name)
+    try:
+        yield
+    finally:
+        actor.autocast_dtype, actor.head_float32 = was
 
 
 class SnapshotReference:
@@ -259,10 +304,12 @@ def build_references(
                 raise PreflightError(
                     f"{what}: start {reference.start!r} is not a snapshot reference"
                 )
+            followed = build_actor(device)
+            set_precision(followed, reference.autocast_dtype)
             out[name] = ChampionReference(
                 name,
                 start,
-                build_actor(device),
+                followed,
                 champion=champion,
                 load_snapshot=load_snapshot,
                 transform=transform,
@@ -288,6 +335,10 @@ def build_references(
                 atol = 1e-5 if stated is msgspec.UNSET else stated
                 worst = self_test(loaded.actor, codec, artifact.probe, atol=atol, what=what)
                 said = f"probe self-test {worst:.3g}"
+            # After the self-test, which checks the artifact computes what it was saved as.
+            set_precision(loaded.actor, reference.autocast_dtype)
+            if reference.autocast_dtype is not msgspec.UNSET:
+                said += f", evaluated at {reference.autocast_dtype}"
             out[name] = loaded
         elif isinstance(reference, FieldMLPReferenceSpec):
             out[name] = _field_mlp(name, reference.path, spec, device)

@@ -458,6 +458,8 @@ class DemoBC:
         self.schedule = build_schedule(spec.coef)
         self.batch_rows = int(spec.batch_rows)
         self.seed = int(spec.seed)
+        #: ``demo_bc.autocast_dtype``: the demonstration rows' forward at this precision.
+        self.autocast_dtype = spec.autocast_dtype
         self.readers = tuple(readers)
         self.codec = codec
         rows = [
@@ -530,7 +532,10 @@ class DemoBC:
         import torch
 
         batch = self._next()
-        distribution = inputs.actor.distribution(batch.obs)
+        from .references import actor_precision
+
+        with actor_precision(inputs.actor, self.autocast_dtype):
+            distribution = inputs.actor.distribution(batch.obs)
         log_probs = distribution.log_prob(batch.actions)
         weight = batch.weights.sum().clamp_min(1e-8)
         nll = -(log_probs * batch.weights).sum() / weight

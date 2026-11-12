@@ -55,6 +55,25 @@ def installed(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
         importlib.invalidate_caches()
 
 
+@pytest.fixture(autouse=True)
+def _cpu_bfloat16_off_onednn(request: pytest.FixtureRequest) -> Iterator[None]:
+    """A test module that sets ``CPU_BFLOAT16 = True`` runs bfloat16 on the processor, and it
+    runs without oneDNN, on PyTorch's own kernels: on some of CI's Windows runners oneDNN cannot
+    create a bfloat16 primitive, and once one creation has failed every convolution and linear
+    layer after it in the process fails the same way (royalelearn's conftest, the same guard)."""
+    if not getattr(request.module, "CPU_BFLOAT16", False):
+        yield
+        return
+    import torch
+
+    was = torch.backends.mkldnn.enabled
+    torch.backends.mkldnn.enabled = False
+    try:
+        yield
+    finally:
+        torch.backends.mkldnn.enabled = was
+
+
 @pytest.fixture(scope="session")
 def mock_env_spec() -> Any:
     from royalelearn.testing import mock_env_spec
