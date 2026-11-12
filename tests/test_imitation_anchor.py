@@ -477,6 +477,8 @@ def test_a_frozen_row_leaves_the_actors_keys_out() -> None:
 
     base = {field: 0.0 for field in UpdateResult.__struct_fields__}
     base.update(kl_by_epoch=[0.0], clip_fraction_by_epoch=[0.0], extra={})
+    if "phase_seconds" in base:  # royalelearn 0.5.25's per-phase seconds, a mapping
+        base["phase_seconds"] = {}
     base.update(n_minibatches=1, n_optimizer_steps=1, n_samples=1, actor_rows=1, actor_forwards=1)
     trained = update_fields(msgspec.convert({**base, "actor_trained": True}, UpdateResult))
     frozen = update_fields(msgspec.convert({**base, "actor_trained": False}, UpdateResult))
